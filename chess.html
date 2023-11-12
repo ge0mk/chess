@@ -1,0 +1,213 @@
+<html>
+	<script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+	<body>
+		<div id="graph"></div>
+	</body>
+	<script type="text/javascript">
+		const north = 0, east = 1, south = 2, west = 3;
+
+		function getId(x, y, z) {
+			return (z * 4 + y) * 8 + x;
+		}
+
+		function getX(id) {
+			return id % 8;
+		}
+
+		function getY(id) {
+			return (id>>3) % 4;
+		}
+
+		function getZ(id) {
+			return id>>5;
+		}
+
+		function createChessField(player_count) {
+			let nodes = [];
+			let edges = [];
+
+			function addNode(x, y, z) {
+				const id = getId(x, y, z);
+				const parity = (x + y) % 2;
+				nodes[id] = {
+					id: id,
+					x: x, y: y, z: z,
+					parity: parity,
+					color: {
+						background: parity ? '#FFFFFF' : '#000000',
+						border: parity ? '#BBBBBB' : '#444444',
+						highlight: {
+							background: parity ? '#FFFFFF' : '#000000',
+							border: '#FF0000'
+						}
+					},
+					neighbors: [],
+				};
+			}
+
+			function addEdge(from, to) {
+				edges.push({from: from, to: to, color: '#888888'});
+				edges.push({from: to, to: from, color: '#888888'});
+
+				if (getZ(from) != getZ(to)) {
+					nodes[from].neighbors[north] = (to<<2) + south;
+					nodes[to].neighbors[north] = (from<<2) + south;
+				} else if (getX(from) < getX(to)) {
+					nodes[from].neighbors[west] = (to<<2) + west;
+					nodes[to].neighbors[east] = (from<<2) + east;
+				} else { // getY(from) < getY(to)
+					nodes[from].neighbors[north] = (to<<2) + north;
+					nodes[to].neighbors[south] = (from<<2) + south;
+				}
+			}
+
+			for (let z = 0; z < player_count; z++) {
+				for (let y = 0; y < 4; y++) {
+					for (let x = 0; x < 8; x++) {
+						addNode(x, y, z);
+					}
+				}
+			}
+
+			for (let z = 0; z < player_count; z++) {
+				for (let y = 0; y < 3; y++) {
+					for (let x = 0; x < 7; x++) {
+						addEdge(getId(x, y, z), getId(x + 1, y, z));
+						addEdge(getId(x, y, z), getId(x, y + 1, z));
+					}
+				}
+
+				for (let x = 0; x < 7; x++) {
+					addEdge(getId(x, 3, z), getId(x + 1, 3, z));
+				}
+
+				for (let y = 0; y < 3; y++) {
+					addEdge(getId(7, y, z), getId(7, y + 1, z));
+				}
+
+				for (let x = 0; x < 4; x++) {
+					addEdge(getId(x, 3, z), getId(7 - x, 3, (z + 1) % player_count));
+				}
+			}
+
+			return {nodes: nodes, edges: edges};
+		}
+
+		const graph = createChessField(5);
+
+		const options = {
+			nodes: {
+				shape: "square",
+				size: 66
+			}
+		};
+
+		const network = new vis.Network(document.getElementById("graph"), graph, options);
+
+		function getReachableNodes(nodes, start, type) {
+			class Visitor {
+				constructor(node, direction) {
+					this.node = node;
+					this.direction = direction;
+				}
+
+				forward() {
+					const next = nodes[this.node]?.neighbors[this.direction];
+					if (next !== undefined) {
+						return new Visitor(next>>2, next % 4);
+					}
+				}
+
+				right() {
+					const next = nodes[this.node]?.neighbors[(this.direction + 1) % 4];
+					if (next !== undefined) {
+						return new Visitor(next>>2, next % 4);
+					}
+				}
+
+				left() {
+					const next = nodes[this.node]?.neighbors[(this.direction + 3) % 4];
+					if (next !== undefined) {
+						return new Visitor(next>>2, next % 4);
+					}
+				}
+			}
+
+			let result = new Set();
+			switch (type) {
+				case "pawn": {
+					let visitor = new Visitor(start, north).forward();
+					if (visitor) {
+						result.add(visitor.node);
+					}
+				} break;
+				case "bishop": {
+					for (let dir in [north, east, south, west]) {
+						let visitor = new Visitor(start, dir).forward()?.right();
+						while (visitor !== undefined) {
+							result.add(visitor.node);
+							visitor = visitor.left()?.right();
+						}
+
+						visitor = new Visitor(start, dir).forward()?.left();
+						while (visitor !== undefined) {
+							result.add(visitor.node);
+							visitor = visitor.right()?.left();
+						}
+					}
+				} break;
+				case "knight": {
+					for (let dir in [north, east, south, west]) {
+						let visitor = new Visitor(start, dir);
+						visitor = visitor.forward()?.forward();
+
+						const a = visitor?.left()?.node;
+						if (a !== undefined) {
+							result.add(a);
+						}
+
+						const b = visitor?.right()?.node;
+						if (b !== undefined) {
+							result.add(b);
+						}
+					}
+				} break;
+				case "rook": {
+					for (let dir in [north, east, south, west]) {
+						let visitor = new Visitor(start, dir);
+						while (visitor !== undefined) {
+							result.add(visitor.node);
+							visitor = visitor.forward();
+						}
+					}
+				} break;
+				case "queen": return getReachableNodes(nodes, start, "bishop").concat(getReachableNodes(nodes, start, "rook"));
+				case "king": {
+					for (let dir in [north, east, south, west]) {
+						let a = new Visitor(start, dir).forward()?.node;
+						if (a !== undefined) {
+							result.add(a);
+						}
+
+						let b = new Visitor(start, dir).forward()?.left()?.node;
+						if (b !== undefined) {
+							result.add(b);
+						}
+
+						let c = new Visitor(start, dir).forward()?.right()?.node;
+						if (c !== undefined) {
+							result.add(c);
+						}
+					}
+				} break;
+			}
+
+			result.delete(start);
+			return [...result];
+		}
+
+		network.on("selectNode", (event) => {
+			network.selectNodes(getReachableNodes(graph.nodes, event.nodes[0], "bishop"));
+		});
+	</script>
+</html>
