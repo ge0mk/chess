@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg 
+    fill="var(--color, #fff)" 
+    stroke="var(--outline, #000)" 
+    stroke-width="2px"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    viewBox="0 0 64 64"
+    version="1.1"
+    id="bishop"
+    xmlns="http://www.w3.org/2000/svg">
+    <path d="M32,49c12,9 12,0 30,9l-3,4c-12,-6 -18,0 -27,-6c-9,6 -15,0 -27,6l-3,-4c18,-9 18,0 30,-9Z"/>
+    <path d="M32,10c-18,6 -19,23 -10,26l-4,9c4,5 24,5 28,0l-4,-9c9,-3 8,-20 -10,-26Z"/>
+    <path d="M32,10 a4,4 0 0,0 0,-8 a4,4 0 0,0 0,8Z"/>
+    <path d="M32,20v8"/>
+    <path d="M28,24h8"/>
+    <path d="M18,45c7,-4 21,-4 28,0"/>
+    <path d="M22,36c5,-2 15,-2 20,0"/>
+</svg>

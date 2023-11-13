@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<!--remove fill and stroke for variable coloration-->
+<svg
+	fill="var(--color, #fff)" 
+    stroke="var(--outline, #000)"
+    stroke-width="2px" 
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    viewBox="0 0 64 64"
+    version="1.1"
+    id="pawn"
+    xmlns="http://www.w3.org/2000/svg">
+	<path d="M32,2C40,2 42,9 38,15C47,19 46,28 42,35C50,39 58,51 53,62L11,62C6,51 14,39 22,35C18,28 17,19 26,15C22,9 24,2 32,2Z"/>
+</svg>

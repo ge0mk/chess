@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!--remove fill and stroke for variable coloration-->
+<svg
+    fill="var(--color, #fff)" 
+    stroke="var(--outline, #000)"
+    stroke-width="2px" 
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    viewBox="0 0 64 64"
+    version="1.1"
+    id="queen"
+    xmlns="http://www.w3.org/2000/svg">
+    <path d="M32,10L27,32L19,12L16,33L6,17L8,38L16,50L13,56C17,60 47,60 51,56L48,50L56,38L58,17L48,33L45,12L37,32L32,10Z"/>
+    <path d="M6,17 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+    <path d="M19,12 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+    <path d="M32,10 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+    <path d="M45,12 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+    <path d="M58,17 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+    <path d="M13,56C25,50 39,50 51,56"/>
+    <path d="M16,50C26,46 38,46 48,50"/>
+    <path d="M12,44C25,39 39,39 52,44"/>
+    <path d="M9,38L12,36C15,37 20,36 22,34C24,35 28,36 32,33C36,36 40,35 42,34C44,36 49,37 52,36L55,38"/>
+</svg>

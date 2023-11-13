@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!--remove fill and stroke for variable coloration-->
+<svg 
+    fill="var(--color, #fff)" 
+    stroke="var(--outline, #000)"
+    stroke-width="2px" 
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    viewBox="0 0 64 64"
+    version="1.1"
+    id="rook"
+    xmlns="http://www.w3.org/2000/svg">
+    <path d="M26,2L26,7L20,7L20,2L11,2L11,13L18,19L18,42L11,50L11,56L7,56L7,62L57,62L57,56L53,56L53,50L46,42L46,19L53,13L53,2L44,2L44,7L38,7L38,2L26,2Z"/>
+    <path d="M11,13L53,13"/>
+    <path d="M18,19L46,19"/>
+    <path d="M18,42L46,42"/>
+    <path d="M11,50L53,50"/>
+    <path d="M11,56L53,56"/>
+</svg>

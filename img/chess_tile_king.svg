@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC '-//W3C//DTD SVG 1.1//EN'  'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd'>
+<!--remove fill and stroke for variable coloration-->
+<svg
+    fill="var(--color, #fff)" 
+    stroke="var(--outline, #000)"
+    stroke-width="2px"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    viewBox="0 0 64 64"
+    version="1.1"
+    id="king"
+    xmlns="http://www.w3.org/2000/svg">
+    <path d="M32,13c-10,0 -5,16 0,23c5,-7 10,-23 0,-23z"/>
+    <path d="M32,40c2,-12 9,-24 22,-22c16,3 4,17 -1,25l0,13c-13,5 -29,5 -42,0l0,-13c-5,-8 -17,-22 -1,-25c13,-2 20,10 22,22z"/>
+    <path d="M11,44c13,-4 27,-4 42,0"/>
+    <path d="M11,50c13,-4 27,-4 42,0"/>
+    <path d="M11,56c13,-4 27,-4 42,0"/>
+    <path d="M32,2v11"/>
+    <path d="M26,7h12"/>
+</svg>
