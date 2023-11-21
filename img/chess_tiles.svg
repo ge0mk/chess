@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!--
+    insert svg in html and use tiles with:
+        <svg class="myClass">
+            <use xlink:href="#bishop"/>
+        </svg>
+    
+    style them over css (not necessary but recommended) with:
+        - -color: fill color (default: #fff)
+        - -outline: outline color (default: #000)
+        width, height,... as known from css
+ -->
+<svg
+    style="display:none"
+    version="1.0"
+    xmlns="http://www.w3.org/2000/svg">
+    <symbol
+        id="bishop"
+        fill="var(--color, #fff)" 
+        stroke="var(--outline, #000)" 
+        stroke-width="2px"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        viewBox="0 0 64 64">
+        <path d="M32,49c12,9 12,0 30,9l-3,4c-12,-6 -18,0 -27,-6c-9,6 -15,0 -27,6l-3,-4c18,-9 18,0 30,-9Z"/>
+        <path d="M32,10c-18,6 -19,23 -10,26l-4,9c4,5 24,5 28,0l-4,-9c9,-3 8,-20 -10,-26Z"/>
+        <path d="M32,10 a4,4 0 0,0 0,-8 a4,4 0 0,0 0,8Z"/>
+        <path d="M32,20v8"/>
+        <path d="M28,24h8"/>
+        <path d="M18,45c7,-4 21,-4 28,0"/>
+        <path d="M22,36c5,-2 15,-2 20,0"/>
+    </symbol>
+    <symbol 
+        id="king" 
+        fill="var(--color, #fff)" 
+        stroke="var(--outline, #000)" 
+        stroke-width="2px" 
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        viewBox="0 0 64 64">
+        <path d="M32,13c-10,0 -5,16 0,23c5,-7 10,-23 0,-23z"/>
+        <path d="M32,40c2,-12 9,-24 22,-22c16,3 4,17 -1,25l0,13c-13,5 -29,5 -42,0l0,-13c-5,-8 -17,-22 -1,-25c13,-2 20,10 22,22z"/>
+        <path d="M11,44c13,-4 27,-4 42,0"/>
+        <path d="M11,50c13,-4 27,-4 42,0"/>
+        <path d="M11,56c13,-4 27,-4 42,0"/>
+        <path d="M32,2v11"/>
+        <path d="M26,7h12"/>
+    </symbol>
+    <symbol 
+        id="knight" 
+        fill="var(--color, #fff)" 
+        stroke="var(--outline, #000)" 
+        stroke-width="2px" 
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        viewBox="0 0 64 64">
+        <path d="M35,24C35,28 33,33 24,35C18,38 16,47 13,47C12,46 9,47 13,42C9,47 4,43 5,38C5,33 11,28 12,24C10,19 16,14 16,14L17,5L25,10L29,5L32,12C57,7 58,47 60,59L20,59C18,50 33,45 32,32"/>
+        <path d="M25,10L17,14"/>
+        <path fill="var(--outline, #000)" stroke="None" d="M19,18c-2,-1 -4,5 -2,6c2,1 4,-5 2,-6Z"/>
+        <path fill="var(--outline, #000)" stroke="None" d="M10,35c-2,0 -3,5 -1,5c2,0 3,-5 1,-5Z"/>
+    </symbol>
+    <symbol 
+        id="pawn" 
+        fill="var(--color, #fff)" 
+        stroke="var(--outline, #000)" 
+        stroke-width="2px" 
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        viewBox="0 0 64 64">
+        <path d="M32,2C40,2 42,9 38,15C47,19 46,28 42,35C50,39 58,51 53,62L11,62C6,51 14,39 22,35C18,28 17,19 26,15C22,9 24,2 32,2Z"/>
+    </symbol>
+    <symbol 
+        id="queen" 
+        fill="var(--color, #fff)" 
+        stroke="var(--outline, #000)" 
+        stroke-width="2px" 
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        viewBox="0 0 64 64">
+        <path d="M32,10L27,32L19,12L16,33L6,17L8,38L16,50L13,56C17,60 47,60 51,56L48,50L56,38L58,17L48,33L45,12L37,32L32,10Z"/>
+        <path d="M6,17 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+        <path d="M19,12 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+        <path d="M32,10 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+        <path d="M45,12 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+        <path d="M58,17 a3,3 0 0,0 0,-6 a3,3 0 0,0 0,6Z"/>
+        <path d="M13,56C25,50 39,50 51,56"/>
+        <path d="M16,50C26,46 38,46 48,50"/>
+        <path d="M12,44C25,39 39,39 52,44"/>
+        <path d="M9,38L12,36C15,37 20,36 22,34C24,35 28,36 32,33C36,36 40,35 42,34C44,36 49,37 52,36L55,38"/>
+    </symbol>
+    <symbol
+        id="rook"
+        fill="var(--color, #fff)" 
+        stroke="var(--outline, #000)"
+        stroke-width="2px" 
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        viewBox="0 0 64 64">
+        <path d="M26,2L26,7L20,7L20,2L11,2L11,13L18,19L18,42L11,50L11,56L7,56L7,62L57,62L57,56L53,56L53,50L46,42L46,19L53,13L53,2L44,2L44,7L38,7L38,2L26,2Z"/>
+        <path d="M11,13L53,13"/>
+        <path d="M18,19L46,19"/>
+        <path d="M18,42L46,42"/>
+        <path d="M11,50L53,50"/>
+        <path d="M11,56L53,56"/>
+    </symbol>
+</svg>
