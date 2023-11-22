@@ -4,7 +4,9 @@ project(chess)
 
 set(CMAKE_C_STANDARD 23 CACHE STRING "C standard to conform to")
 
-find_package(glfw3 REQUIRED)
+add_subdirectory(glfw)
+
+include_directories(glfw/include)
 
 add_compile_options(-Wall -Wextra -Werror -DSPIRV_SHADERS)
 
