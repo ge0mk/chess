@@ -1,7 +1,0 @@
-[
-  {
-    "directory": "/home/superuser/Code/chess",
-    "arguments": ["clang", "-o", "build/main", "main.c", "glad.c", "-std=c2x", "-Wall", "-Wextra", "-Werror", "-g", "-lglfw", "-lm", "-DSPIRV_SHADERS"],
-    "file": "main.c"
-  }
-]

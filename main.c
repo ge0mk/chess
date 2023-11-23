@@ -1,4 +1,6 @@
+#include <errno.h>
 #include <math.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -34,6 +36,21 @@
 })
 
 #define clamp(a, min_val, max_val) (max(min(a, max_val), min_val))
+
+#define panic(format, ...) ({ \
+	fprintf(stderr, format, ##__VA_ARGS__); \
+	exit(EXIT_FAILURE); \
+})
+
+typedef enum ShaderSource {
+	ShaderSource_File,
+	ShaderSource_Memory,
+} ShaderSource;
+
+typedef enum ShaderFormat {
+	ShaderFormat_GLSL,
+	ShaderFormat_SPIRV,
+} ShaderFormat;
 
 typedef struct {
 	uint8_t *data;
@@ -73,15 +90,10 @@ enum FigureType {
 	King,
 };
 
-noreturn void panic(const char *msg) {
-	fputs(msg, stderr);
-	exit(EXIT_FAILURE);
-}
-
 Buffer loadFile(const char *path) {
 	FILE *file = fopen(path, "r");
 	if (!file) {
-		panic("couldn't load shader\n");
+		panic("Failed to load file %s: %s\n", path, strerror(errno));
 	}
 
 	static const uint64_t chunk_size = 4095;
@@ -100,29 +112,79 @@ Buffer loadFile(const char *path) {
 	return (Buffer){data, size};
 }
 
-GLuint loadShader(const char *path, GLenum type, bool is_spirv) {
-	const Buffer source = loadFile(path);
-	GLuint shader = glCreateShader(type);
-
-	if (is_spirv) {
-		glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V_ARB, source.data, source.size);
-		glSpecializeShader(shader, "main", 0, NULL, NULL);
-	} else {
-		glShaderSource(shader, 1, (const char**)&source.data, NULL);
-		glCompileShader(shader);
-
-		int success;
-		glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-
-		if(!success) {
-			char infoLog[512];
-			glGetShaderInfoLog(shader, 512, NULL, infoLog);
-			puts(infoLog);
-		}
+GLuint loadShader(Buffer source, GLenum type, ShaderFormat format) {
+	if (source.size == 0) {
+		return -1;
 	}
 
-	free(source.data);
+	GLuint shader = glCreateShader(type);
+
+	switch (format) {
+		case ShaderFormat_GLSL: {
+			glShaderSource(shader, 1, (const char**)&source.data, NULL);
+			glCompileShader(shader);
+		} break;
+		case ShaderFormat_SPIRV: {
+			glShaderBinary(1, &shader, GL_SHADER_BINARY_FORMAT_SPIR_V_ARB, source.data, source.size);
+			glSpecializeShader(shader, "main", 0, NULL, NULL);
+		} break;
+	}
+
+	int success;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+
+	if(!success) {
+		char info_log[2048];
+		glGetShaderInfoLog(shader, 2048, NULL, info_log);
+		panic("Failed to compile shader: \n%s", info_log);
+	}
+
 	return shader;
+}
+
+GLuint loadProgram(uint64_t num_shaders, ...) {
+	const GLuint program = glCreateProgram();
+	GLuint shaders[num_shaders];
+
+	va_list ptr;
+	va_start(ptr, num_shaders);
+	for (uint64_t i = 0; i < num_shaders; i++) {
+		const GLenum type = va_arg(ptr, GLenum);
+		const ShaderFormat format = va_arg(ptr, ShaderFormat);
+		const ShaderSource source = va_arg(ptr, ShaderSource);
+		const char *path_or_data = va_arg(ptr, const char*);
+
+		if (source == ShaderSource_File) {
+			const Buffer content = loadFile(path_or_data);
+			shaders[i] = loadShader(content, type, format);
+			free(content.data);
+		} else if (source == ShaderSource_Memory) {
+			const uint64_t size = va_arg(ptr, uint64_t);
+			shaders[i] = loadShader((Buffer){
+				.data = (uint8_t*)path_or_data,
+				.size = size
+			}, type, format);
+		}
+
+		glAttachShader(program, shaders[i]);
+	}
+	va_end(ptr);
+
+	glLinkProgram(program);
+
+	for (uint64_t i = 0; i < num_shaders; i++) {
+		glDeleteShader(shaders[i]);
+	}
+
+	int success;
+	glGetProgramiv(program, GL_LINK_STATUS, &success);
+	if(!success) {
+		char info_log[2048];
+		glGetProgramInfoLog(program, 2048, NULL, info_log);
+		panic("Failed to link shader program: \n%s", info_log);
+	}
+
+	return program;
 }
 
 VertexBuffer generateMesh(uint64_t n, float scale) {
@@ -399,31 +461,17 @@ int main() {
 
 	glfwSwapInterval(1);
 
+	const GLuint field_shader = loadProgram(2,
 #if defined(SPIRV_SHADERS)
-	const GLuint vertex_shader = loadShader("build/vert.spv", GL_VERTEX_SHADER, true);
-	const GLuint fragment_shader = loadShader("build/frag.spv", GL_FRAGMENT_SHADER, true);
+		GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.vert.spv",
+		GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.frag.spv"
 #else
-	const GLuint vertex_shader = loadShader("main.vert", GL_VERTEX_SHADER, false);
-	const GLuint fragment_shader = loadShader("main.frag", GL_FRAGMENT_SHADER, false);
+		GL_VERTEX_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.vert",
+		GL_FRAGMENT_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.frag"
 #endif
+	);
 
-	const GLuint shader_program = glCreateProgram();
-	glAttachShader(shader_program, vertex_shader);
-	glAttachShader(shader_program, fragment_shader);
-	glLinkProgram(shader_program);
-
-	int success;
-	glGetProgramiv(shader_program, GL_LINK_STATUS, &success);
-	if(!success) {
-		char info_log[512];
-		glGetProgramInfoLog(shader_program, 512, NULL, info_log);
-		puts(info_log);
-	}
-
-	glDeleteShader(vertex_shader);
-	glDeleteShader(fragment_shader);
-
-	glUseProgram(shader_program);
+	glUseProgram(field_shader);
 
 	const uint32_t n = 3;
 	const float scale = 0.14f;

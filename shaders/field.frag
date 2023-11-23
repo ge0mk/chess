@@ -1,6 +1,6 @@
 #version 460 core
 
-layout(binding = 0) uniform uniform_data {
+layout (binding = 0, std140) uniform uniform_data {
 	int num_players;
 	int fields_marked[8];
 };
