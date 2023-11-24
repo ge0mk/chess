@@ -18,6 +18,7 @@
 #define getId(x, y, z) (((z)<<5) | ((y)<<3) | (x))
 #define getX(id) ((id) & 0b00000111)
 #define getY(id) (((id)>>3) & 0b00000011)
+#define getXY(id) ((id) & 0b00011111)
 #define getZ(id) ((id)>>5)
 #define packIdAndDirection(id, direction) (((id)<<2) | (direction))
 #define extractId(v) ((v)>>2)
@@ -60,13 +61,32 @@ typedef struct {
 typedef struct {
 	float x, y;
 	float u, v;
-	uint8_t idx, idy, idz;
+	uint32_t id;
 } Vertex;
 
 typedef struct {
 	GLuint handle;
-	uint64_t vertex_count, vertex_size;
+	GLuint vao;
+	uint64_t vertex_count;
 } VertexBuffer;
+
+typedef struct {
+	float aspect_ratio;
+} ViewportInfoUniformData;
+
+typedef struct {
+	uint32_t num_players;
+} FieldShaderUniformData;
+
+typedef struct {
+	uint32_t x, y, z, w;
+} uvec4;
+
+typedef struct {
+	uvec4 field[32];
+	uint32_t cursor_id;
+	uint32_t num_players;
+} PieceShaderUniformData;
 
 typedef struct {
 	uint64_t id;
@@ -187,14 +207,14 @@ GLuint loadProgram(uint64_t num_shaders, ...) {
 	return program;
 }
 
-VertexBuffer generateMesh(uint64_t n, float scale) {
-	GLuint vertex_buffer;
-	glGenBuffers(1, &vertex_buffer);
-	glBindBuffer(GL_ARRAY_BUFFER, vertex_buffer);
+void generateMeshes(uint64_t n, float scale, VertexBuffer *field_mesh, VertexBuffer *piece_mesh) {
+	field_mesh->vertex_count = 0;
+	piece_mesh->vertex_count = 0;
 
 	const uint64_t vertex_count = (n * 32) * 6;
-	Vertex *vertices = malloc(vertex_count * sizeof(Vertex));
-	uint64_t vertex_index = 0;
+	Vertex *field_vertices = malloc(vertex_count * sizeof(Vertex));
+	Vertex *piece_vertices = malloc(vertex_count * sizeof(Vertex));
+
 	for (uint64_t segment = 0; segment < n * 2; segment++) {
 		const float angle_a = (float)(segment + 0) / (float)(n * 2) * 2.0f * PI;
 		const float angle_b = (float)(segment + 1) / (float)(n * 2) * 2.0f * PI;
@@ -223,45 +243,76 @@ VertexBuffer generateMesh(uint64_t n, float scale) {
 				const float x3 = delta_a_x * (a + 1) + delta_b_x * (b + 1);
 				const float y3 = delta_a_y * (a + 1) + delta_b_y * (b + 1);
 
-				#define addVertex(X, Y, U, V) \
-					vertices[vertex_index++] = (Vertex){ \
+				const float x_center = (x0 + x3) / 2.0f;
+				const float y_center = (y0 + y3) / 2.0f;
+
+				#define addFieldVertex(X, Y, U, V) \
+					field_vertices[field_mesh->vertex_count++] = (Vertex){ \
 						.x = X, .y = Y, \
 						.u = U, .v = V, \
-						.idx = field_x, \
-						.idy = field_y, \
-						.idz = field_z, \
+						.id = getId(field_x, field_y, field_z), \
 					};
 
-				addVertex(x1, y1, 1, 0);
-				addVertex(x0, y0, 0, 0);
-				addVertex(x2, y2, 0, 1);
+				addFieldVertex(x1, y1, 1, 0);
+				addFieldVertex(x0, y0, 0, 0);
+				addFieldVertex(x2, y2, 0, 1);
 
-				addVertex(x2, y2, 0, 1);
-				addVertex(x3, y3, 1, 1);
-				addVertex(x1, y1, 1, 0);
+				addFieldVertex(x2, y2, 0, 1);
+				addFieldVertex(x3, y3, 1, 1);
+				addFieldVertex(x1, y1, 1, 0);
 
-				#undef addVertex
+				#undef addFieldVertex
+
+				#define addPieceVertex(X, Y, U, V) \
+					piece_vertices[piece_mesh->vertex_count++] = (Vertex){ \
+						.x = X + (U - 0.5) * scale / 2, .y = Y + (V - 0.5) * scale / 2, \
+						.u = U, .v = V, \
+						.id = getId(field_x, field_y, field_z), \
+					};
+
+				addPieceVertex(x_center, y_center, 1, 0);
+				addPieceVertex(x_center, y_center, 0, 0);
+				addPieceVertex(x_center, y_center, 0, 1);
+
+				addPieceVertex(x_center, y_center, 0, 1);
+				addPieceVertex(x_center, y_center, 1, 1);
+				addPieceVertex(x_center, y_center, 1, 0);
+
+				#undef addPieceVertex
 			}
 		}
 	}
 
-	glBufferData(GL_ARRAY_BUFFER, vertex_count * sizeof(Vertex), vertices, GL_STATIC_DRAW);
-	free(vertices);
+	glGenVertexArrays(1, &field_mesh->vao);
+	glBindVertexArray(field_mesh->vao);
+
+	glGenBuffers(1, &field_mesh->handle);
+	glBindBuffer(GL_ARRAY_BUFFER, field_mesh->handle);
+	glBufferData(GL_ARRAY_BUFFER, field_mesh->vertex_count * sizeof(Vertex), field_vertices, GL_STATIC_DRAW);
+	free(field_vertices);
 
 	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
 	glEnableVertexAttribArray(0);
-
 	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
 	glEnableVertexAttribArray(1);
-
-	glVertexAttribIPointer(2, 3, GL_BYTE, sizeof(Vertex), (void*)offsetof(Vertex, idx));
+	glVertexAttribIPointer(2, 1, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, id));
 	glEnableVertexAttribArray(2);
 
-	return (VertexBuffer){
-		.handle = vertex_buffer,
-		.vertex_count = vertex_count,
-		.vertex_size = sizeof(Vertex)
-	};
+
+	glGenVertexArrays(1, &piece_mesh->vao);
+	glBindVertexArray(piece_mesh->vao);
+
+	glGenBuffers(1, &piece_mesh->handle);
+	glBindBuffer(GL_ARRAY_BUFFER, piece_mesh->handle);
+	glBufferData(GL_ARRAY_BUFFER, piece_mesh->vertex_count * sizeof(Vertex), piece_vertices, GL_STATIC_DRAW);
+	free(piece_vertices);
+
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
+	glEnableVertexAttribArray(1);
+	glVertexAttribIPointer(2, 1, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, id));
+	glEnableVertexAttribArray(2);
 }
 
 uint64_t getTileUnderCursor(float x, float y, float segment_count, float scale) {
@@ -437,6 +488,13 @@ void markReachableNodes(Node *field, uint64_t n, uint64_t start, uint64_t type, 
 	#undef markReachable
 }
 
+float window_width = 1000, window_height = 1000;
+void onFramebufferResized([[maybe_unused]] GLFWwindow *window, int width, int height) {
+	glViewport(0, 0, width, height);
+	window_width = width;
+	window_height = height;
+}
+
 int main() {
 	if(!glfwInit()) {
 		panic("Failed to initialize GLFW\n");
@@ -448,16 +506,20 @@ int main() {
 	glfwWindowHint(GLFW_VERSION_MINOR, 6);
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
-	float window_width = 1000, window_height = 1000;
 	GLFWwindow* window = glfwCreateWindow(window_width, window_height, "chess", NULL, NULL);
 	if (!window) {
 		panic("Failed to open GLFW window\n");
 	}
 
-	glfwSetWindowOpacity(window, 0.0f);
+	glfwSetFramebufferSizeCallback(window, onFramebufferResized);
 
 	glfwMakeContextCurrent(window);
 	gladLoadGL();
+
+	glEnable(GL_MULTISAMPLE);
+
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
 	glfwSwapInterval(1);
 
@@ -471,28 +533,53 @@ int main() {
 #endif
 	);
 
-	glUseProgram(field_shader);
+	const GLuint piece_shader = loadProgram(2,
+#if defined(SPIRV_SHADERS)
+		GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/piece.vert.spv",
+		GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/piece.frag.spv"
+#else
+		GL_VERTEX_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/piece.vert",
+		GL_FRAGMENT_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/piece.frag"
+#endif
+	);
 
 	const uint32_t n = 3;
-	const float scale = 0.14f;
-
-	const VertexBuffer field_mesh = generateMesh(n, scale);
+	const float scale = 0.5f / n;
 	Node *field = createField(n);
+
+	VertexBuffer field_mesh, piece_mesh;
+	generateMeshes(n, scale, &field_mesh, &piece_mesh);
+
 	uint32_t *reachable = malloc(sizeof(uint32_t) * n);
 
-	const uint64_t uniform_size = (n + 1) * 4;
-	uint32_t *uniform_data = malloc(uniform_size * sizeof(int));
-	memset(uniform_data, 0, uniform_size * sizeof(int));
-	uniform_data[0] = n;
+	ViewportInfoUniformData viewport_info_uniform_data = {
+		.aspect_ratio = window_width / window_height
+	};
 
-	GLuint uniform_buffer;
-	glGenBuffers(1, &uniform_buffer);
-	glBindBuffer(GL_UNIFORM_BUFFER, uniform_buffer);
-	glBufferData(GL_UNIFORM_BUFFER, uniform_size * sizeof(int), uniform_data, GL_DYNAMIC_DRAW);
-	glBindBufferBase(GL_UNIFORM_BUFFER, 0, uniform_buffer);
+	FieldShaderUniformData field_shader_uniform_data = {
+		.num_players = n
+	};
+
+	PieceShaderUniformData piece_shader_uniform_data = {
+		.num_players = n
+	};
+
+	GLuint viewport_info_uniform_buffer;
+	glGenBuffers(1, &viewport_info_uniform_buffer);
+	glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
+
+	GLuint field_shader_uniform_buffer;
+	glGenBuffers(1, &field_shader_uniform_buffer);
+	glBindBuffer(GL_UNIFORM_BUFFER, field_shader_uniform_buffer);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(FieldShaderUniformData), &field_shader_uniform_data, GL_DYNAMIC_DRAW);
+
+	GLuint piece_shader_uniform_buffer;
+	glGenBuffers(1, &piece_shader_uniform_buffer);
+	glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(PieceShaderUniformData), &piece_shader_uniform_data, GL_DYNAMIC_DRAW);
 
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-	glEnable(GL_MULTISAMPLE);
 
 	uint64_t piece = None;
 	uint64_t prev_key = GLFW_RELEASE;
@@ -508,7 +595,7 @@ int main() {
 
 		double xpos, ypos;
 		glfwGetCursorPos(window, &xpos, &ypos);
-		uint64_t tile = getTileUnderCursor(xpos / window_width * 2 - 1.0f, 1.0f - ypos / window_height * 2, n, scale);
+		uint64_t tile = getTileUnderCursor((xpos / window_width * 2 - 1.0f) * (window_width / window_height), 1.0f - ypos / window_height * 2, n, scale);
 
 		for (uint64_t i = 0; i < n; i++) {
 			reachable[i] = 0;
@@ -516,22 +603,36 @@ int main() {
 
 		markReachableNodes(field, n, tile, piece, false, false, reachable);
 
-		memset(&uniform_data[4], 0, n * 4 * sizeof(int));
+		viewport_info_uniform_data.aspect_ratio = window_width / window_height;
+		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
+
 		for (uint64_t i = 0; i < n; i++) {
-			uniform_data[(i + 1) * 4] = reachable[i];
+			piece_shader_uniform_data.field[i * 2].w = reachable[i];
 		}
 
-		uniform_data[(getZ(tile) + 1) * 4] |= 1<<(tile & 31);
-		glBufferData(GL_UNIFORM_BUFFER, uniform_size * sizeof(int), uniform_data, GL_DYNAMIC_DRAW);
+		piece_shader_uniform_data.cursor_id = tile;
 
+		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(PieceShaderUniformData), &piece_shader_uniform_data, GL_DYNAMIC_DRAW);
+
+		glUseProgram(field_shader);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 1, field_shader_uniform_buffer);
+		glBindVertexArray(field_mesh.vao);
 		glDrawArrays(GL_TRIANGLES, 0, field_mesh.vertex_count);
+
+		glUseProgram(piece_shader);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 1, piece_shader_uniform_buffer);
+		glBindVertexArray(piece_mesh.vao);
+		glDrawArrays(GL_TRIANGLES, 0, piece_mesh.vertex_count);
 
 		glfwSwapBuffers(window);
 	}
 
 	free(field);
 	free(reachable);
-	free(uniform_data);
 	glfwDestroyWindow(window);
 
 	return 0;
