@@ -13,6 +13,9 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #define PI 3.141592654f
 
 #define getId(x, y, z) (((z)<<5) | ((y)<<3) | (x))
@@ -78,20 +81,7 @@ typedef struct {
 	uint32_t num_players;
 } FieldShaderUniformData;
 
-typedef struct {
-	uint32_t x, y, z, w;
-} uvec4;
-
-typedef struct {
-	uvec4 field[32];
-	uint32_t cursor_id;
-	uint32_t num_players;
-} PieceShaderUniformData;
-
-typedef struct {
-	uint64_t id;
-	uint64_t neighbors[4];
-} Node;
+#define MAX_PLAYERS 10
 
 enum Direction {
 	North,
@@ -100,7 +90,7 @@ enum Direction {
 	West,
 };
 
-enum FigureType {
+typedef enum FigureType {
 	None,
 	Pawn,
 	Bishop,
@@ -108,7 +98,22 @@ enum FigureType {
 	Rook,
 	Queen,
 	King,
-};
+} FigureType;
+
+typedef struct {
+	uint32_t neighbors[4];
+	uint32_t id;
+	uint32_t figure;
+	uint32_t player;
+	uint32_t is_reachable;
+} Tile;
+
+typedef struct {
+	Tile tiles[32 * MAX_PLAYERS];
+	uint32_t num_players;
+	uint32_t cursor_id;
+	uint32_t selected_id;
+} Field;
 
 Buffer loadFile(const char *path) {
 	FILE *file = fopen(path, "r");
@@ -347,69 +352,80 @@ uint64_t getTileUnderCursor(float x, float y, float segment_count, float scale) 
 	return getId(tile_x, tile_y, tile_z);
 }
 
-void createEdge(Node *a, Node *b) {
-	if (getZ(a->id) != getZ(b->id)) {
-		a->neighbors[North] = packIdAndDirection(b->id, South);
-		b->neighbors[North] = packIdAndDirection(a->id, South);
-	} else if (getX(a->id) < getX(b->id)) {
-		a->neighbors[West] = packIdAndDirection(b->id, West);
-		b->neighbors[East] = packIdAndDirection(a->id, East);
-	} else {// (getY(a->id) < getY(b->id)) {
-		a->neighbors[North] = packIdAndDirection(b->id, North);
-		b->neighbors[South] = packIdAndDirection(a->id, South);
+void createEdge(Field *field, uint32_t a, uint32_t b) {
+	if (getZ(a) != getZ(b)) {
+		field->tiles[a].neighbors[North] = packIdAndDirection(b, South);
+		field->tiles[b].neighbors[North] = packIdAndDirection(a, South);
+	} else if (getX(a) < getX(b)) {
+		field->tiles[a].neighbors[West] = packIdAndDirection(b, West);
+		field->tiles[b].neighbors[East] = packIdAndDirection(a, East);
+	} else {// (getY(a) < getY(b)) {
+		field->tiles[a].neighbors[North] = packIdAndDirection(b, North);
+		field->tiles[b].neighbors[South] = packIdAndDirection(a, South);
 	}
 }
 
-Node* createField(uint64_t n) {
-	Node *field = malloc(n * 32 * sizeof(Node));
-
-	for (uint64_t id = 0; id < n * 32; id++) {
-		field[id] = (Node){
+void createField(Field *field) {
+	for (uint64_t id = 0; id < field->num_players * 32; id++) {
+		field->tiles[id] = (Tile){
 			.id = id,
-			.neighbors = {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX},
+			.neighbors = {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX},
 		};
 	}
 
-	for (uint64_t z = 0; z < n; z++) {
+	for (uint64_t z = 0; z < field->num_players; z++) {
 		for (uint64_t y = 0; y < 3; y++) {
 			for (uint64_t x = 0; x < 7; x++) {
-				createEdge(field + getId(x, y, z), field + getId(x + 1, y, z));
-				createEdge(field + getId(x, y, z), field + getId(x, y + 1, z));
+				createEdge(field, getId(x, y, z), getId(x + 1, y, z));
+				createEdge(field, getId(x, y, z), getId(x, y + 1, z));
 			}
 		}
 
 		for (uint64_t x = 0; x < 7; x++) {
-			createEdge(field + getId(x, 3, z), field + getId(x + 1, 3, z));
+			createEdge(field, getId(x, 3, z), getId(x + 1, 3, z));
 		}
 
 		for (uint64_t y = 0; y < 3; y++) {
-			createEdge(field + getId(7, y, z), field + getId(7, y + 1, z));
+			createEdge(field, getId(7, y, z), getId(7, y + 1, z));
 		}
 
 		for (uint64_t x = 0; x < 4; x++) {
-			createEdge(field + getId(x, 3, z), field + getId(7 - x, 3, (z + 1) % n));
+			createEdge(field, getId(x, 3, z), getId(7 - x, 3, (z + 1) % field->num_players));
 		}
-	}
 
-	return field;
+		for (uint64_t x = 0; x < 8; x++) {
+			field->tiles[getId(x, 1, z)].figure = Pawn;
+			field->tiles[getId(x, 1, z)].player = z;
+			field->tiles[getId(x, 0, z)].player = z;
+		}
+
+		field->tiles[getId(0, 0, z)].figure = Rook;
+		field->tiles[getId(1, 0, z)].figure = Knight;
+		field->tiles[getId(2, 0, z)].figure = Bishop;
+		field->tiles[getId(3, 0, z)].figure = Queen;
+		field->tiles[getId(4, 0, z)].figure = King;
+		field->tiles[getId(5, 0, z)].figure = Bishop;
+		field->tiles[getId(6, 0, z)].figure = Knight;
+		field->tiles[getId(7, 0, z)].figure = Rook;
+	}
 }
 
-void markReachableNodes(Node *field, uint64_t n, uint64_t start, uint64_t type, bool is_on_opposing_half, bool is_on_spawn_field, uint32_t *reachable) {
-	#define isValidId(id) (id < n * 32)
+void markReachableNodes(Field *field, uint64_t start, uint64_t type, bool is_on_opposing_half, bool is_on_spawn_field) {
+	#define isValidId(id) (id < field->num_players * 32)
 
 	#define forward(pos) ({ \
 		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field[extractId(_pos)].neighbors[extractDirection(_pos)] : _pos; \
+		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[extractDirection(_pos)] : _pos; \
 	})
 
 	#define right(pos) ({ \
 		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field[extractId(_pos)].neighbors[(extractDirection(_pos) + 1) % 4] : _pos; \
+		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[(extractDirection(_pos) + 1) % 4] : _pos; \
 	})
 
 	#define left(pos) ({ \
 		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field[extractId(_pos)].neighbors[(extractDirection(_pos) + 3) % 4] : _pos; \
+		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[(extractDirection(_pos) + 3) % 4] : _pos; \
 	})
 
 	#define diagonalRight(pos) left(right(pos))
@@ -418,7 +434,7 @@ void markReachableNodes(Node *field, uint64_t n, uint64_t start, uint64_t type, 
 	#define markReachable(id) ({ \
 		const uint64_t _id = id; \
 		if (isValidId(_id)) { \
-			reachable[getZ(_id)] |= 1<<(_id & 31); \
+			field->tiles[_id].is_reachable = true; \
 		} \
 	})
 
@@ -465,8 +481,8 @@ void markReachableNodes(Node *field, uint64_t n, uint64_t start, uint64_t type, 
 			}
 		} break;
 		case Queen: {
-			markReachableNodes(field, n, start, Bishop, is_on_opposing_half, is_on_spawn_field, reachable);
-			markReachableNodes(field, n, start, Rook, is_on_opposing_half, is_on_spawn_field, reachable);
+			markReachableNodes(field, start, Bishop, is_on_opposing_half, is_on_spawn_field);
+			markReachableNodes(field, start, Rook, is_on_opposing_half, is_on_spawn_field);
 		} break;
 		case King: {
 			for (uint64_t d = North; d <= West; d++) {
@@ -543,25 +559,21 @@ int main() {
 #endif
 	);
 
-	const uint32_t n = 3;
-	const float scale = 0.5f / n;
-	Node *field = createField(n);
+	Field field = (Field) {
+		.num_players = 3
+	};
+	const float scale = 0.5f / field.num_players;
+	createField(&field);
 
 	VertexBuffer field_mesh, piece_mesh;
-	generateMeshes(n, scale, &field_mesh, &piece_mesh);
-
-	uint32_t *reachable = malloc(sizeof(uint32_t) * n);
+	generateMeshes(field.num_players, scale, &field_mesh, &piece_mesh);
 
 	ViewportInfoUniformData viewport_info_uniform_data = {
 		.aspect_ratio = window_width / window_height
 	};
 
 	FieldShaderUniformData field_shader_uniform_data = {
-		.num_players = n
-	};
-
-	PieceShaderUniformData piece_shader_uniform_data = {
-		.num_players = n
+		.num_players = field.num_players
 	};
 
 	GLuint viewport_info_uniform_buffer;
@@ -577,44 +589,61 @@ int main() {
 	GLuint piece_shader_uniform_buffer;
 	glGenBuffers(1, &piece_shader_uniform_buffer);
 	glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(PieceShaderUniformData), &piece_shader_uniform_data, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(Field), &field, GL_DYNAMIC_DRAW);
+
+	int spritesheet_width = 0, spritesheet_height = 0, spritesheet_channels = 0;
+	stbi_set_flip_vertically_on_load(true);
+	unsigned char *spritesheet = stbi_load("spritesheet.png", &spritesheet_width, &spritesheet_height, &spritesheet_channels, 0);
+	GLuint spritesheet_texture;
+	glGenTextures(1, &spritesheet_texture);
+	glBindTexture(GL_TEXTURE_2D, spritesheet_texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, spritesheet_width, spritesheet_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, spritesheet);
+	glGenerateMipmap(GL_TEXTURE_2D);
+	stbi_image_free(spritesheet);
 
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
 
-	uint64_t piece = None;
-	uint64_t prev_key = GLFW_RELEASE;
+	bool prev_m1 = GLFW_RELEASE;
+
 	while(!glfwWindowShouldClose(window)) {
 		glfwPollEvents();
 
-		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_RELEASE && prev_key == GLFW_PRESS) {
-			piece = (piece + 1) % 7;
-		}
-		prev_key = glfwGetKey(window, GLFW_KEY_SPACE);
-
-		glClear(GL_COLOR_BUFFER_BIT);
-
 		double xpos, ypos;
 		glfwGetCursorPos(window, &xpos, &ypos);
-		uint64_t tile = getTileUnderCursor((xpos / window_width * 2 - 1.0f) * (window_width / window_height), 1.0f - ypos / window_height * 2, n, scale);
+		field.cursor_id = getTileUnderCursor((xpos / window_width * 2 - 1.0f) * (window_width / window_height), 1.0f - ypos / window_height * 2, field.num_players, scale);
 
-		for (uint64_t i = 0; i < n; i++) {
-			reachable[i] = 0;
+		if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) == GLFW_RELEASE && prev_m1 == GLFW_PRESS) {
+			if (field.tiles[field.cursor_id].is_reachable) {
+				field.tiles[field.cursor_id].figure = field.tiles[field.selected_id].figure;
+				field.tiles[field.cursor_id].player = field.tiles[field.selected_id].player;
+				field.tiles[field.selected_id].figure = None;
+				for (uint64_t i = 0; i < field.num_players * 32; i++) {
+					field.tiles[i].is_reachable = 0;
+				}
+			} else if (field.tiles[field.cursor_id].figure != None) {
+				for (uint64_t i = 0; i < field.num_players * 32; i++) {
+					field.tiles[i].is_reachable = 0;
+				}
+				const bool is_on_opposing_half = field.tiles[field.cursor_id].player != getZ(field.cursor_id);
+				markReachableNodes(&field, field.cursor_id, field.tiles[field.cursor_id].figure, is_on_opposing_half, false);
+				field.selected_id = field.cursor_id;
+			}
 		}
 
-		markReachableNodes(field, n, tile, piece, false, false, reachable);
+		prev_m1 = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1);
+
+		glClear(GL_COLOR_BUFFER_BIT);
 
 		viewport_info_uniform_data.aspect_ratio = window_width / window_height;
 		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
 
-		for (uint64_t i = 0; i < n; i++) {
-			piece_shader_uniform_data.field[i * 2].w = reachable[i];
-		}
-
-		piece_shader_uniform_data.cursor_id = tile;
-
 		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(PieceShaderUniformData), &piece_shader_uniform_data, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(Field), &field, GL_DYNAMIC_DRAW);
 
 		glUseProgram(field_shader);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
@@ -623,16 +652,19 @@ int main() {
 		glDrawArrays(GL_TRIANGLES, 0, field_mesh.vertex_count);
 
 		glUseProgram(piece_shader);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, spritesheet_texture);
+
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, piece_shader_uniform_buffer);
+		glUniform1i(0, 0);
+
 		glBindVertexArray(piece_mesh.vao);
 		glDrawArrays(GL_TRIANGLES, 0, piece_mesh.vertex_count);
 
 		glfwSwapBuffers(window);
 	}
 
-	free(field);
-	free(reachable);
 	glfwDestroyWindow(window);
 
 	return 0;

@@ -9,6 +9,12 @@ layout (location = 2) flat in int id;
 
 layout (location = 0) out vec4 out_color;
 
+const vec3 playerColors[] = vec3[](
+	vec3(0, 1, 0),
+	vec3(0, 0, 1),
+	vec3(1, 0, 0)
+);
+
 vec3 hsv2rgb(float hue, float saturation, float value) {
 	const vec4 K = vec4(1.0f, 2.0f / 3.0f, 1.0f / 3.0f, 3.0f);
 	const vec3 p = abs(fract(vec3(hue) + K.xyz) * 6.0f - K.www);
@@ -22,7 +28,7 @@ void main() {
 	const int x = id & 7, y = (id>>3) & 3, z = id>>5;
 	const int parity = (x + y) % 2;
 
-	const vec3 border_color = hsv2rgb(float(z) / float(num_players), 1.0f, 1.0f);
+	const vec3 border_color = playerColors[z];
 	const vec3 tile_color = vec3(float(parity));
 
 	out_color = vec4(mix(tile_color, border_color, sharp_dist_to_center), 1.0f);

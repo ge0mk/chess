@@ -7,7 +7,7 @@ layout (location = 2) in int id;
 layout (location = 1) out vec2 out_uv;
 layout (location = 2) flat out int out_id;
 
-layout (binding = 0, std140) uniform uniform_data {
+layout (binding = 0, std140) uniform aspect_ratio_uniform_data {
 	float aspect_ratio;
 };
 
