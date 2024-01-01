@@ -16,6 +16,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include <SDL2/SDL_net.h>
+
 #define PI 3.141592654f
 
 #define getId(x, y, z) (((z)<<5) | ((y)<<3) | (x))
@@ -511,11 +513,33 @@ void onFramebufferResized([[maybe_unused]] GLFWwindow *window, int width, int he
 	window_height = height;
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+	if (SDLNet_Init() != 0 ) {
+		panic("Failed to initialize SDL_net\n");
+	}
+	atexit(SDLNet_Quit);
+
+	TCPsocket sock, server;
+	SDLNet_SocketSet set = SDLNet_AllocSocketSet(10);
+	if (argc == 3) {
+		IPaddress ip;
+		SDLNet_ResolveHost(&ip, argv[1], atoi(argv[2]));
+		sock = SDLNet_TCP_Open(&ip);
+	} else {
+		IPaddress ip;
+		SDLNet_ResolveHost(&ip, NULL, 1234);
+		server = SDLNet_TCP_Open(&ip);
+		SDLNet_TCP_AddSocket(set, server);
+		SDLNet_CheckSockets(set, ~0);
+		SDLNet_SocketReady(server);
+		sock = SDLNet_TCP_Accept(server);
+	}
+
+	SDLNet_TCP_AddSocket(set, sock);
+
 	if(!glfwInit()) {
 		panic("Failed to initialize GLFW\n");
 	}
-
 	atexit(glfwTerminate);
 
 	glfwWindowHint(GLFW_VERSION_MAJOR, 4);
@@ -632,6 +656,10 @@ int main() {
 				markReachableNodes(&field, field.cursor_id, field.tiles[field.cursor_id].figure, is_on_opposing_half, false);
 				field.selected_id = field.cursor_id;
 			}
+
+			SDLNet_TCP_Send(sock, &field, sizeof(field));
+		} else if (SDLNet_CheckSockets(set, 0) > 0) {
+			SDLNet_TCP_Recv(sock, &field, sizeof(field));
 		}
 
 		prev_m1 = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1);

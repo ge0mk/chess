@@ -43,7 +43,7 @@ endif()
 
 add_executable(chess main.c glad.c)
 add_dependencies(chess shaders)
-target_link_libraries(chess PRIVATE glfw)
+target_link_libraries(chess PRIVATE glfw SDL2_net)
 
 if(UNIX)
     target_link_libraries(chess PRIVATE m)
