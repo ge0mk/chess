@@ -1,14 +1,4 @@
-#include <assert.h>
-#include <errno.h>
-#include <math.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdnoreturn.h>
-#include <string.h>
+#include "shared.h"
 
 #include "glad.h"
 #define GLFW_INCLUDE_NONE
@@ -16,38 +6,6 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
-
-#include <SDL2/SDL_net.h>
-
-#define PI 3.141592654f
-
-#define getId(x, y, z) (((z)<<5) | ((y)<<3) | (x))
-#define getX(id) ((id) & 0b00000111)
-#define getY(id) (((id)>>3) & 0b00000011)
-#define getXY(id) ((id) & 0b00011111)
-#define getZ(id) ((id)>>5)
-#define packIdAndDirection(id, direction) (((id)<<2) | (direction))
-#define extractId(v) ((v)>>2)
-#define extractDirection(v) ((v) & 0b00000011)
-
-#define min(a, b) ({ \
-	const typeof(a) _a = a; \
-	const typeof(b) _b = b; \
-	_a < _b ? _a : _b; \
-})
-
-#define max(a, b) ({ \
-	const typeof(a) _a = a; \
-	const typeof(b) _b = b; \
-	_a > _b ? _a : _b; \
-})
-
-#define clamp(a, min_val, max_val) (max(min(a, max_val), min_val))
-
-#define panic(format, ...) ({ \
-	fprintf(stderr, format, ##__VA_ARGS__); \
-	exit(EXIT_FAILURE); \
-})
 
 typedef enum ShaderSource {
 	ShaderSource_File,
@@ -83,40 +41,6 @@ typedef struct {
 typedef struct {
 	uint32_t num_players;
 } FieldShaderUniformData;
-
-#define MAX_PLAYERS 10
-
-enum Direction {
-	North,
-	East,
-	South,
-	West,
-};
-
-typedef enum FigureType {
-	None,
-	Pawn,
-	Bishop,
-	Knight,
-	Rook,
-	Queen,
-	King,
-} FigureType;
-
-typedef struct {
-	uint32_t neighbors[4];
-	uint32_t id;
-	uint32_t figure;
-	uint32_t player;
-	uint32_t is_reachable;
-} Tile;
-
-typedef struct {
-	Tile tiles[32 * MAX_PLAYERS];
-	uint32_t num_players;
-	uint32_t cursor_id;
-	uint32_t selected_id;
-} Field;
 
 Buffer loadFile(const char *path) {
 	FILE *file = fopen(path, "r");
@@ -355,158 +279,6 @@ uint64_t getTileUnderCursor(float x, float y, float segment_count, float scale) 
 	return getId(tile_x, tile_y, tile_z);
 }
 
-void createEdge(Field *field, uint32_t a, uint32_t b) {
-	if (getZ(a) != getZ(b)) {
-		field->tiles[a].neighbors[North] = packIdAndDirection(b, South);
-		field->tiles[b].neighbors[North] = packIdAndDirection(a, South);
-	} else if (getX(a) < getX(b)) {
-		field->tiles[a].neighbors[West] = packIdAndDirection(b, West);
-		field->tiles[b].neighbors[East] = packIdAndDirection(a, East);
-	} else {// (getY(a) < getY(b)) {
-		field->tiles[a].neighbors[North] = packIdAndDirection(b, North);
-		field->tiles[b].neighbors[South] = packIdAndDirection(a, South);
-	}
-}
-
-void createField(Field *field) {
-	for (uint64_t id = 0; id < field->num_players * 32; id++) {
-		field->tiles[id] = (Tile){
-			.id = id,
-			.neighbors = {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX},
-		};
-	}
-
-	for (uint64_t z = 0; z < field->num_players; z++) {
-		for (uint64_t y = 0; y < 3; y++) {
-			for (uint64_t x = 0; x < 7; x++) {
-				createEdge(field, getId(x, y, z), getId(x + 1, y, z));
-				createEdge(field, getId(x, y, z), getId(x, y + 1, z));
-			}
-		}
-
-		for (uint64_t x = 0; x < 7; x++) {
-			createEdge(field, getId(x, 3, z), getId(x + 1, 3, z));
-		}
-
-		for (uint64_t y = 0; y < 3; y++) {
-			createEdge(field, getId(7, y, z), getId(7, y + 1, z));
-		}
-
-		for (uint64_t x = 0; x < 4; x++) {
-			createEdge(field, getId(x, 3, z), getId(7 - x, 3, (z + 1) % field->num_players));
-		}
-
-		for (uint64_t x = 0; x < 8; x++) {
-			field->tiles[getId(x, 1, z)].figure = Pawn;
-			field->tiles[getId(x, 1, z)].player = z;
-			field->tiles[getId(x, 0, z)].player = z;
-		}
-
-		field->tiles[getId(0, 0, z)].figure = Rook;
-		field->tiles[getId(1, 0, z)].figure = Knight;
-		field->tiles[getId(2, 0, z)].figure = Bishop;
-		field->tiles[getId(3, 0, z)].figure = Queen;
-		field->tiles[getId(4, 0, z)].figure = King;
-		field->tiles[getId(5, 0, z)].figure = Bishop;
-		field->tiles[getId(6, 0, z)].figure = Knight;
-		field->tiles[getId(7, 0, z)].figure = Rook;
-	}
-}
-
-void markReachableNodes(Field *field, uint64_t start, uint64_t type, bool is_on_opposing_half, bool is_on_spawn_field) {
-	#define isValidId(id) (id < field->num_players * 32)
-
-	#define forward(pos) ({ \
-		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[extractDirection(_pos)] : _pos; \
-	})
-
-	#define right(pos) ({ \
-		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[(extractDirection(_pos) + 1) % 4] : _pos; \
-	})
-
-	#define left(pos) ({ \
-		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[(extractDirection(_pos) + 3) % 4] : _pos; \
-	})
-
-	#define diagonalRight(pos) left(right(pos))
-	#define diagonalLeft(pos) right(left(pos))
-
-	#define markReachable(id) ({ \
-		const uint64_t _id = id; \
-		if (isValidId(_id)) { \
-			field->tiles[_id].is_reachable = true; \
-		} \
-	})
-
-	switch (type) {
-		case None: break;
-		case Pawn: {
-			const uint64_t current = forward(packIdAndDirection(start, is_on_opposing_half ? South : North));
-			markReachable(extractId(current));
-			if (is_on_spawn_field) {
-				markReachable(extractId(forward(current)));
-			}
-		} break;
-		case Bishop: {
-			for (uint64_t d = North; d <= West; d++) {
-				uint64_t current = diagonalRight(packIdAndDirection(start, d));
-				for (uint64_t i = 0; i < 8; i++) {
-					markReachable(extractId(current));
-					current = diagonalRight(current);
-				}
-
-				current = diagonalLeft(packIdAndDirection(start, d));
-				for (uint64_t i = 0; i < 8; i++) {
-					markReachable(extractId(current));
-					current = diagonalLeft(current);
-				}
-			}
-		} break;
-		case Knight: {
-			for (uint64_t d = North; d <= West; d++) {
-				const uint64_t current = packIdAndDirection(start, d);
-				markReachable(extractId(right(forward(forward(current)))));
-				markReachable(extractId(left(forward(forward(current)))));
-				markReachable(extractId(forward(right(forward(current)))));
-				markReachable(extractId(forward(left(forward(current)))));
-			}
-		} break;
-		case Rook: {
-			for (uint64_t d = North; d <= West; d++) {
-				uint64_t current = forward(packIdAndDirection(start, d));
-				for (uint64_t i = 0; i < 8; i++) {
-					markReachable(extractId(current));
-					current = forward(current);
-				}
-			}
-		} break;
-		case Queen: {
-			markReachableNodes(field, start, Bishop, is_on_opposing_half, is_on_spawn_field);
-			markReachableNodes(field, start, Rook, is_on_opposing_half, is_on_spawn_field);
-		} break;
-		case King: {
-			for (uint64_t d = North; d <= West; d++) {
-				const uint64_t current = forward(packIdAndDirection(start, d));
-				markReachable(extractId(current));
-				markReachable(extractId(right(current)));
-				markReachable(extractId(left(current)));
-			}
-		} break;
-		default: break;
-	}
-
-	#undef isValidId
-	#undef forward
-	#undef right
-	#undef left
-	#undef diagonalRight
-	#undef diagonalLeft
-	#undef markReachable
-}
-
 float window_width = 1000, window_height = 1000;
 void onFramebufferResized([[maybe_unused]] GLFWwindow *window, int width, int height) {
 	glViewport(0, 0, width, height);
@@ -514,20 +286,7 @@ void onFramebufferResized([[maybe_unused]] GLFWwindow *window, int width, int he
 	window_height = height;
 }
 
-int SDLNet_TCP_Recv_Full(TCPsocket socket, void *buffer, size_t size) {
-	uint8_t *dst = (uint8_t*)buffer;
-	uint64_t received = SDLNet_TCP_Recv(socket, dst, size);
-	while (received < size) {
-		const int64_t tmp = SDLNet_TCP_Recv(socket, dst + received, size - received);
-		if (tmp <= 0) {
-			return -1;
-		}
-		received += tmp;
-	}
-	return size;
-}
-
-int main(int argc, char *argv[]) {
+int main([[maybe_unused]] int argc, char *argv[]) {
 	Field field = (Field) {
 		.num_players = atoi(argv[1])
 	};
@@ -537,28 +296,17 @@ int main(int argc, char *argv[]) {
 	}
 	atexit(SDLNet_Quit);
 
-	TCPsocket sock, server;
+	TCPsocket sock;
 	SDLNet_SocketSet client_set = SDLNet_AllocSocketSet(10);
-	TCPsocket clients[10];
-	uint64_t num_clients = 0;
-
-	SDLNet_SocketSet server_set = SDLNet_AllocSocketSet(1);
 	IPaddress ip;
-	bool is_server = argc != 3;
-	if (is_server) {
-		SDLNet_ResolveHost(&ip, NULL, 1234);
-		server = SDLNet_TCP_Open(&ip);
-		SDLNet_TCP_AddSocket(server_set, server);
-	} else {
-		SDLNet_ResolveHost(&ip, argv[1], atoi(argv[2]));
-		sock = SDLNet_TCP_Open(&ip);
-		if (!sock) {
-			panic("failed to connect to server\n");
-		}
-		SDLNet_TCP_AddSocket(client_set, sock);
-		if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) != sizeof(field)) {
-			panic("server sent incomplete field: %s\n", SDLNet_GetError());
-		}
+	SDLNet_ResolveHost(&ip, argv[1], atoi(argv[2]));
+	sock = SDLNet_TCP_Open(&ip);
+	if (!sock) {
+		panic("failed to connect to server\n");
+	}
+	SDLNet_TCP_AddSocket(client_set, sock);
+	if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) != sizeof(field)) {
+		panic("server sent incomplete field: %s\n", SDLNet_GetError());
 	}
 
 	if(!glfwInit()) {
@@ -570,7 +318,7 @@ int main(int argc, char *argv[]) {
 	glfwWindowHint(GLFW_VERSION_MINOR, 6);
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
-	GLFWwindow* window = glfwCreateWindow(window_width, window_height, is_server ? "server" : "client", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(window_width, window_height, "client", NULL, NULL);
 	if (!window) {
 		panic("Failed to open GLFW window\n");
 	}
@@ -678,54 +426,12 @@ int main(int argc, char *argv[]) {
 				field.selected_id = field.cursor_id;
 			}
 
-			if (is_server) {
-				for (uint64_t i = 0; i < num_clients; i++) {
-					if (SDLNet_TCP_Send(clients[i], &field, sizeof(field)) != sizeof(field)) {
-						SDLNet_TCP_Close(clients[i]);
-						SDLNet_TCP_DelSocket(client_set, clients[i]);
-						clients[i] = clients[num_clients - 1];
-						num_clients--;
-					}
-				}
-			} else {
-				SDLNet_TCP_Send(sock, &field, sizeof(field));
-			}
+			SDLNet_TCP_Send(sock, &field, sizeof(field));
 		}
 
-		if (is_server) {
-			if (SDLNet_CheckSockets(server_set, 0) > 0) {
-				const TCPsocket client = SDLNet_TCP_Accept(server);
-				if (client) {
-					if (SDLNet_TCP_Send(client, &field, sizeof(field)) == sizeof(field)) {
-						SDLNet_TCP_AddSocket(client_set, client);
-						clients[num_clients++] = client;
-					}
-				}
-			}
-
-			if (SDLNet_CheckSockets(client_set, 0) > 0) {
-				for (uint64_t i = 0; i < num_clients; i++) {
-					if (SDLNet_SocketReady(clients[i])) {
-						if (SDLNet_TCP_Recv_Full(clients[i], &field, sizeof(field)) < 0) {
-							panic("client stopped mid transmission\n");
-						}
-					}
-				}
-
-				for (uint64_t i = 0; i < num_clients; i++) {
-					if (SDLNet_TCP_Send(clients[i], &field, sizeof(field)) != sizeof(field)) {
-						SDLNet_TCP_Close(clients[i]);
-						SDLNet_TCP_DelSocket(client_set, clients[i]);
-						clients[i] = clients[num_clients - 1];
-						num_clients--;
-					}
-				}
-			}
-		} else {
-			if (SDLNet_CheckSockets(client_set, 0) > 0) {
-				if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) < 0) {
-					panic("server stopped responding\n");
-				}
+		if (SDLNet_CheckSockets(client_set, 0) > 0) {
+			if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) < 0) {
+				panic("server stopped responding\n");
 			}
 		}
 
