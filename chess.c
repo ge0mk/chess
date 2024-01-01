@@ -1,24 +1,22 @@
-#include "shared.h"
+#include "chess.h"
 
 void createEdge(Field *field, uint32_t a, uint32_t b) {
 	if (getZ(a) != getZ(b)) {
-		field->tiles[a].neighbors[North] = packIdAndDirection(b, South);
-		field->tiles[b].neighbors[North] = packIdAndDirection(a, South);
+		field->neighbors[a][North] = packIdAndDirection(b, South);
+		field->neighbors[b][North] = packIdAndDirection(a, South);
 	} else if (getX(a) < getX(b)) {
-		field->tiles[a].neighbors[West] = packIdAndDirection(b, West);
-		field->tiles[b].neighbors[East] = packIdAndDirection(a, East);
+		field->neighbors[a][West] = packIdAndDirection(b, West);
+		field->neighbors[b][East] = packIdAndDirection(a, East);
 	} else {// (getY(a) < getY(b)) {
-		field->tiles[a].neighbors[North] = packIdAndDirection(b, North);
-		field->tiles[b].neighbors[South] = packIdAndDirection(a, South);
+		field->neighbors[a][North] = packIdAndDirection(b, North);
+		field->neighbors[b][South] = packIdAndDirection(a, South);
 	}
 }
 
 void createField(Field *field) {
 	for (uint64_t id = 0; id < field->num_players * 32; id++) {
-		field->tiles[id] = (Tile){
-			.id = id,
-			.neighbors = {UINT32_MAX, UINT32_MAX, UINT32_MAX, UINT32_MAX},
-		};
+		for (Direction dir = North; dir <= West; dir++)
+		field->neighbors[id][dir] = UINT32_MAX;
 	}
 
 	for (uint64_t z = 0; z < field->num_players; z++) {
@@ -63,17 +61,17 @@ void markReachableNodes(Field *field, uint64_t start, uint64_t type, bool is_on_
 
 	#define forward(pos) ({ \
 		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[extractDirection(_pos)] : _pos; \
+		isValidId(extractId(_pos)) ? field->neighbors[extractId(_pos)][extractDirection(_pos)] : _pos; \
 	})
 
 	#define right(pos) ({ \
 		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[(extractDirection(_pos) + 1) % 4] : _pos; \
+		isValidId(extractId(_pos)) ? field->neighbors[extractId(_pos)][(extractDirection(_pos) + 1) % 4] : _pos; \
 	})
 
 	#define left(pos) ({ \
 		const uint64_t _pos = pos; \
-		isValidId(extractId(_pos)) ? field->tiles[extractId(_pos)].neighbors[(extractDirection(_pos) + 3) % 4] : _pos; \
+		isValidId(extractId(_pos)) ? field->neighbors[extractId(_pos)][(extractDirection(_pos) + 3) % 4] : _pos; \
 	})
 
 	#define diagonalRight(pos) left(right(pos))
@@ -150,17 +148,4 @@ void markReachableNodes(Field *field, uint64_t start, uint64_t type, bool is_on_
 	#undef diagonalRight
 	#undef diagonalLeft
 	#undef markReachable
-}
-
-int SDLNet_TCP_Recv_Full(TCPsocket socket, void *buffer, size_t size) {
-	uint8_t *dst = (uint8_t*)buffer;
-	uint64_t received = SDLNet_TCP_Recv(socket, dst, size);
-	while (received < size) {
-		const int64_t tmp = SDLNet_TCP_Recv(socket, dst + received, size - received);
-		if (tmp <= 0) {
-			return -1;
-		}
-		received += tmp;
-	}
-	return size;
 }

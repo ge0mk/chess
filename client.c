@@ -1,4 +1,7 @@
-#include "shared.h"
+#include "chess.h"
+#include "networking.h"
+#include <SDL2/SDL_net.h>
+#include <errno.h>
 
 #include "glad.h"
 #define GLFW_INCLUDE_NONE
@@ -286,33 +289,62 @@ void onFramebufferResized([[maybe_unused]] GLFWwindow *window, int width, int he
 	window_height = height;
 }
 
-int main([[maybe_unused]] int argc, char *argv[]) {
-	Field field = (Field) {
-		.num_players = atoi(argv[1])
-	};
+typedef struct ClientState {
+	Field field;
 
-	if (SDLNet_Init() != 0 ) {
+	TCPsocket socket;
+	SDLNet_SocketSet socket_set;
+} ClientState;
+
+void onMouseButtonEvent(GLFWwindow* window, int button, int action, int) {
+	ClientState *state = glfwGetWindowUserPointer(window);
+	Field *field = &state->field;
+
+	if (button == GLFW_MOUSE_BUTTON_1 && action == GLFW_RELEASE) {
+		if (field->tiles[field->cursor_id].is_reachable) {
+			field->tiles[field->cursor_id].figure = field->tiles[field->selected_id].figure;
+			field->tiles[field->cursor_id].player = field->tiles[field->selected_id].player;
+			field->tiles[field->selected_id].figure = None;
+			for (uint64_t i = 0; i < field->num_players * 32; i++) {
+				field->tiles[i].is_reachable = 0;
+			}
+		} else if (field->tiles[field->cursor_id].figure != None) {
+			for (uint64_t i = 0; i < field->num_players * 32; i++) {
+				field->tiles[i].is_reachable = 0;
+			}
+			const bool is_on_opposing_half = field->tiles[field->cursor_id].player != getZ(field->cursor_id);
+			markReachableNodes(field, field->cursor_id, field->tiles[field->cursor_id].figure, is_on_opposing_half, false);
+			field->selected_id = field->cursor_id;
+		}
+
+		if (state->socket) {
+			SDLNet_TCP_Send(state->socket, &field, sizeof(field));
+		}
+	}
+}
+
+int main([[maybe_unused]] int argc, char *argv[]) {
+	ClientState state;
+	Field *field = &state.field;
+
+	if (SDLNet_Init() != 0) {
 		panic("Failed to initialize SDL_net\n");
 	}
-	atexit(SDLNet_Quit);
 
-	TCPsocket sock;
-	SDLNet_SocketSet client_set = SDLNet_AllocSocketSet(10);
-	IPaddress ip;
-	SDLNet_ResolveHost(&ip, argv[1], atoi(argv[2]));
-	sock = SDLNet_TCP_Open(&ip);
-	if (!sock) {
+	state.socket = SDLNet_TCP_Open_Address(argv[1], atoi(argv[2]));
+	if (state.socket) {
+		state.socket_set = SDLNet_AllocSocketSet(1);
+		SDLNet_TCP_AddSocket(state.socket_set, state.socket);
+		if (SDLNet_TCP_Recv_Full(state.socket, field, sizeof(Field)) != sizeof(Field)) {
+			panic("server sent incomplete field: %s\n", SDLNet_GetError());
+		}
+	} else {
 		panic("failed to connect to server\n");
-	}
-	SDLNet_TCP_AddSocket(client_set, sock);
-	if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) != sizeof(field)) {
-		panic("server sent incomplete field: %s\n", SDLNet_GetError());
 	}
 
 	if(!glfwInit()) {
 		panic("Failed to initialize GLFW\n");
 	}
-	atexit(glfwTerminate);
 
 	glfwWindowHint(GLFW_VERSION_MAJOR, 4);
 	glfwWindowHint(GLFW_VERSION_MINOR, 6);
@@ -323,7 +355,9 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 		panic("Failed to open GLFW window\n");
 	}
 
+	glfwSetWindowUserPointer(window, &state);
 	glfwSetFramebufferSizeCallback(window, onFramebufferResized);
+	glfwSetMouseButtonCallback(window, onMouseButtonEvent);
 
 	glfwMakeContextCurrent(window);
 	gladLoadGL();
@@ -355,18 +389,17 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 #endif
 	);
 
-	const float scale = 0.5f / field.num_players;
-	createField(&field);
+	const float scale = 0.5f / field->num_players;
 
 	VertexBuffer field_mesh, piece_mesh;
-	generateMeshes(field.num_players, scale, &field_mesh, &piece_mesh);
+	generateMeshes(field->num_players, scale, &field_mesh, &piece_mesh);
 
 	ViewportInfoUniformData viewport_info_uniform_data = {
 		.aspect_ratio = window_width / window_height
 	};
 
 	FieldShaderUniformData field_shader_uniform_data = {
-		.num_players = field.num_players
+		.num_players = field->num_players
 	};
 
 	GLuint viewport_info_uniform_buffer;
@@ -382,7 +415,7 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 	GLuint piece_shader_uniform_buffer;
 	glGenBuffers(1, &piece_shader_uniform_buffer);
 	glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
-	glBufferData(GL_UNIFORM_BUFFER, sizeof(Field), &field, GL_DYNAMIC_DRAW);
+	glBufferData(GL_UNIFORM_BUFFER, sizeof(field->tiles) + sizeof(field->cursor_id), &field->tiles, GL_DYNAMIC_DRAW);
 
 	int spritesheet_width = 0, spritesheet_height = 0, spritesheet_channels = 0;
 	stbi_set_flip_vertically_on_load(true);
@@ -407,31 +440,16 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 
 		double xpos, ypos;
 		glfwGetCursorPos(window, &xpos, &ypos);
-		field.cursor_id = getTileUnderCursor((xpos / window_width * 2 - 1.0f) * (window_width / window_height), 1.0f - ypos / window_height * 2, field.num_players, scale);
+		field->cursor_id = getTileUnderCursor((xpos / window_width * 2 - 1.0f) * (window_width / window_height), 1.0f - ypos / window_height * 2, field->num_players, scale);
 
 		if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1) == GLFW_RELEASE && prev_m1 == GLFW_PRESS) {
-			if (field.tiles[field.cursor_id].is_reachable) {
-				field.tiles[field.cursor_id].figure = field.tiles[field.selected_id].figure;
-				field.tiles[field.cursor_id].player = field.tiles[field.selected_id].player;
-				field.tiles[field.selected_id].figure = None;
-				for (uint64_t i = 0; i < field.num_players * 32; i++) {
-					field.tiles[i].is_reachable = 0;
-				}
-			} else if (field.tiles[field.cursor_id].figure != None) {
-				for (uint64_t i = 0; i < field.num_players * 32; i++) {
-					field.tiles[i].is_reachable = 0;
-				}
-				const bool is_on_opposing_half = field.tiles[field.cursor_id].player != getZ(field.cursor_id);
-				markReachableNodes(&field, field.cursor_id, field.tiles[field.cursor_id].figure, is_on_opposing_half, false);
-				field.selected_id = field.cursor_id;
-			}
-
-			SDLNet_TCP_Send(sock, &field, sizeof(field));
 		}
 
-		if (SDLNet_CheckSockets(client_set, 0) > 0) {
-			if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) < 0) {
-				panic("server stopped responding\n");
+		if (state.socket) {
+			if (SDLNet_CheckSockets(state.socket_set, 0) > 0) {
+				if (SDLNet_TCP_Recv_Full(state.socket, &field, sizeof(Field)) < 0) {
+					panic("server stopped responding\n");
+				}
 			}
 		}
 
@@ -444,7 +462,7 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
 
 		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(Field), &field, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(field->tiles) + sizeof(field->cursor_id), &field->tiles, GL_DYNAMIC_DRAW);
 
 		glUseProgram(field_shader);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
@@ -467,6 +485,14 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 	}
 
 	glfwDestroyWindow(window);
+	glfwTerminate();
+
+	if (state.socket) {
+		SDLNet_FreeSocketSet(state.socket_set);
+		SDLNet_TCP_Close(state.socket);
+	}
+
+	SDLNet_Quit();
 
 	return 0;
 }

@@ -41,15 +41,9 @@ else()
     add_custom_target(shaders)
 endif()
 
-add_library(shared shared.c)
-
-if(UNIX)
-    target_link_libraries(shared PRIVATE m)
-endif()
-
-add_executable(client client.c glad.c)
+add_executable(client client.c chess.c networking.c glad.c)
 add_dependencies(client shaders)
-target_link_libraries(client PRIVATE glfw SDL2_net shared)
+target_link_libraries(client PRIVATE m glfw SDL2 SDL2_net)
 
-add_executable(server server.c)
-target_link_libraries(server PRIVATE SDL2_net shared)
+add_executable(server server.c chess.c networking.c)
+target_link_libraries(server PRIVATE m SDL2 SDL2_net)

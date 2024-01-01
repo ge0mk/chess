@@ -10,17 +10,8 @@
 #define Queen 5
 #define King 6
 
-struct Tile {
-	ivec4 neighbors;
-	int id;
-	int figure;
-	int player;
-	bool is_reachable;
-};
-
 layout (binding = 1, std140) uniform Field {
-	Tile tiles[32 * MAX_PLAYERS];
-	int num_players;
+	ivec4 tiles[8 * MAX_PLAYERS];
 	int cursor_id;
 };
 
@@ -58,7 +49,7 @@ vec4 getFigureColor(bool parity, int figure, int player) {
 }
 
 vec4 getSelectionColor(bool parity, int figure) {
-	const float dist = sdfCircle(uv - 0.5, 0.35);
+	const float dist = sdfCircle(uv - 0.5, 0.2);
 
 	const vec4 border_color = vec4(vec3(mix(0.9, 0.1, parity)), 1);
 	const vec4 fill_color = id == cursor_id ? vec4(0.2, 0.3, 0.9, 1.0) : selectionColors[int(figure != 0)];
@@ -73,9 +64,9 @@ void main() {
 	const int x = id & 7, y = (id>>3) & 3, z = id>>5;
 	const bool parity = ((x + y) % 2) == 1;
 
-	const int figure = tiles[id].figure;
-	const int player = tiles[id].player;
-	const bool selected = tiles[id].is_reachable || id == cursor_id;
+	const int figure = (tiles[id / 4][id % 4] >> 0) & 255;
+	const int player = (tiles[id / 4][id % 4] >> 8) & 255;
+	const bool selected = (((tiles[id / 4][id % 4] >> 16) & 255) != 0) || id == cursor_id;
 
 	const vec4 figureColor = getFigureColor(parity, figure, player) * float(figure != None);
 	const vec4 selectionColor = getSelectionColor(parity, figure);
