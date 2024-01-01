@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <errno.h>
 #include <math.h>
 #include <stdarg.h>
@@ -513,29 +514,52 @@ void onFramebufferResized([[maybe_unused]] GLFWwindow *window, int width, int he
 	window_height = height;
 }
 
+int SDLNet_TCP_Recv_Full(TCPsocket socket, void *buffer, size_t size) {
+	uint8_t *dst = (uint8_t*)buffer;
+	uint64_t received = SDLNet_TCP_Recv(socket, dst, size);
+	while (received < size) {
+		const int64_t tmp = SDLNet_TCP_Recv(socket, dst + received, size - received);
+		if (tmp <= 0) {
+			return -1;
+		}
+		received += tmp;
+	}
+	return size;
+}
+
 int main(int argc, char *argv[]) {
+	Field field = (Field) {
+		.num_players = atoi(argv[1])
+	};
+
 	if (SDLNet_Init() != 0 ) {
 		panic("Failed to initialize SDL_net\n");
 	}
 	atexit(SDLNet_Quit);
 
 	TCPsocket sock, server;
-	SDLNet_SocketSet set = SDLNet_AllocSocketSet(10);
-	if (argc == 3) {
-		IPaddress ip;
-		SDLNet_ResolveHost(&ip, argv[1], atoi(argv[2]));
-		sock = SDLNet_TCP_Open(&ip);
-	} else {
-		IPaddress ip;
+	SDLNet_SocketSet client_set = SDLNet_AllocSocketSet(10);
+	TCPsocket clients[10];
+	uint64_t num_clients = 0;
+
+	SDLNet_SocketSet server_set = SDLNet_AllocSocketSet(1);
+	IPaddress ip;
+	bool is_server = argc != 3;
+	if (is_server) {
 		SDLNet_ResolveHost(&ip, NULL, 1234);
 		server = SDLNet_TCP_Open(&ip);
-		SDLNet_TCP_AddSocket(set, server);
-		SDLNet_CheckSockets(set, ~0);
-		SDLNet_SocketReady(server);
-		sock = SDLNet_TCP_Accept(server);
+		SDLNet_TCP_AddSocket(server_set, server);
+	} else {
+		SDLNet_ResolveHost(&ip, argv[1], atoi(argv[2]));
+		sock = SDLNet_TCP_Open(&ip);
+		if (!sock) {
+			panic("failed to connect to server\n");
+		}
+		SDLNet_TCP_AddSocket(client_set, sock);
+		if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) != sizeof(field)) {
+			panic("server sent incomplete field: %s\n", SDLNet_GetError());
+		}
 	}
-
-	SDLNet_TCP_AddSocket(set, sock);
 
 	if(!glfwInit()) {
 		panic("Failed to initialize GLFW\n");
@@ -546,7 +570,7 @@ int main(int argc, char *argv[]) {
 	glfwWindowHint(GLFW_VERSION_MINOR, 6);
 	glfwWindowHint(GLFW_SAMPLES, 4);
 
-	GLFWwindow* window = glfwCreateWindow(window_width, window_height, "chess", NULL, NULL);
+	GLFWwindow* window = glfwCreateWindow(window_width, window_height, is_server ? "server" : "client", NULL, NULL);
 	if (!window) {
 		panic("Failed to open GLFW window\n");
 	}
@@ -583,9 +607,6 @@ int main(int argc, char *argv[]) {
 #endif
 	);
 
-	Field field = (Field) {
-		.num_players = 3
-	};
 	const float scale = 0.5f / field.num_players;
 	createField(&field);
 
@@ -657,9 +678,55 @@ int main(int argc, char *argv[]) {
 				field.selected_id = field.cursor_id;
 			}
 
-			SDLNet_TCP_Send(sock, &field, sizeof(field));
-		} else if (SDLNet_CheckSockets(set, 0) > 0) {
-			SDLNet_TCP_Recv(sock, &field, sizeof(field));
+			if (is_server) {
+				for (uint64_t i = 0; i < num_clients; i++) {
+					if (SDLNet_TCP_Send(clients[i], &field, sizeof(field)) != sizeof(field)) {
+						SDLNet_TCP_Close(clients[i]);
+						SDLNet_TCP_DelSocket(client_set, clients[i]);
+						clients[i] = clients[num_clients - 1];
+						num_clients--;
+					}
+				}
+			} else {
+				SDLNet_TCP_Send(sock, &field, sizeof(field));
+			}
+		}
+
+		if (is_server) {
+			if (SDLNet_CheckSockets(server_set, 0) > 0) {
+				const TCPsocket client = SDLNet_TCP_Accept(server);
+				if (client) {
+					if (SDLNet_TCP_Send(client, &field, sizeof(field)) == sizeof(field)) {
+						SDLNet_TCP_AddSocket(client_set, client);
+						clients[num_clients++] = client;
+					}
+				}
+			}
+
+			if (SDLNet_CheckSockets(client_set, 0) > 0) {
+				for (uint64_t i = 0; i < num_clients; i++) {
+					if (SDLNet_SocketReady(clients[i])) {
+						if (SDLNet_TCP_Recv_Full(clients[i], &field, sizeof(field)) < 0) {
+							panic("client stopped mid transmission\n");
+						}
+					}
+				}
+
+				for (uint64_t i = 0; i < num_clients; i++) {
+					if (SDLNet_TCP_Send(clients[i], &field, sizeof(field)) != sizeof(field)) {
+						SDLNet_TCP_Close(clients[i]);
+						SDLNet_TCP_DelSocket(client_set, clients[i]);
+						clients[i] = clients[num_clients - 1];
+						num_clients--;
+					}
+				}
+			}
+		} else {
+			if (SDLNet_CheckSockets(client_set, 0) > 0) {
+				if (SDLNet_TCP_Recv_Full(sock, &field, sizeof(field)) < 0) {
+					panic("server stopped responding\n");
+				}
+			}
 		}
 
 		prev_m1 = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_1);
