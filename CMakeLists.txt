@@ -3,10 +3,16 @@ cmake_minimum_required(VERSION 3.22)
 project(chess)
 
 set(CMAKE_C_STANDARD 23)
+set(CMAKE_CXX_STANDARD 23)
 
-add_subdirectory(glfw)
+add_subdirectory(SDL)
+add_subdirectory(SDL_net)
+add_subdirectory(SDL_image)
 
-include_directories(glfw/include)
+include_directories(imgui)
+include_directories(SDL/include)
+include_directories(SDL_net/include)
+include_directories(SDL_image/include)
 
 if(WIN32)
     add_compile_options(/W4)
@@ -41,9 +47,18 @@ else()
     add_custom_target(shaders)
 endif()
 
-add_executable(client client.c chess.c networking.c glad.c)
-add_dependencies(client shaders)
-target_link_libraries(client PRIVATE m glfw SDL2 SDL2_net)
+add_executable(client client.cpp chess.cpp glad.c
+    imgui/imgui.cpp
+    imgui/imgui_demo.cpp
+    imgui/imgui_draw.cpp
+    imgui/imgui_tables.cpp
+    imgui/imgui_widgets.cpp
+    imgui/backends/imgui_impl_opengl3.cpp
+    imgui/backends/imgui_impl_sdl3.cpp
+)
 
-add_executable(server server.c chess.c networking.c)
-target_link_libraries(server PRIVATE m SDL2 SDL2_net)
+add_dependencies(client shaders)
+target_link_libraries(client PRIVATE m SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
+
+add_executable(server server.cpp chess.cpp)
+target_link_libraries(server PRIVATE m SDL3_net::SDL3_net SDL3::SDL3)

@@ -1,7 +1,2 @@
-# chess
-
-building:
-- linux - x11:
-  `cmake -B build -GNinja -DCMAKE_C_COMPILER=clang -DGLFW_BUILD_WAYLAND=0 -DGLFW_BUILD_X11=1`
-- linux - wayland:
-  `cmake -B build -GNinja -DCMAKE_C_COMPILER=clang -DGLFW_BUILD_WAYLAND=1 -DGLFW_BUILD_X11=0`
+`cmake -B build -GNinja -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DSPIRV_SHADERS=0 -DCMAKE_BUILD_TYPE=Debug`
+`cmake --build build`

@@ -1,4 +1,4 @@
-#include "util.h"
+#include <cstdint>
 
 #define getId(x, y, z) (((z)<<5) | ((y)<<3) | (x))
 #define getX(id) ((id) & 0b00000111)
@@ -11,14 +11,14 @@
 
 #define MAX_PLAYERS 10
 
-typedef enum Direction {
+enum Direction {
 	North,
 	East,
 	South,
 	West,
-} Direction;
+};
 
-typedef enum FigureType {
+enum FigureType {
 	None,
 	Pawn,
 	Bishop,
@@ -26,23 +26,24 @@ typedef enum FigureType {
 	Rook,
 	Queen,
 	King,
-} FigureType;
+};
 
-typedef struct {
+struct Tile {
 	uint8_t figure;
 	uint8_t player;
 	uint8_t is_reachable;
-	uint8_t padding;
-} Tile;
+	uint8_t was_moved;
+};
 
-typedef struct {
+struct Field {
 	uint32_t neighbors[32 * MAX_PLAYERS][4];
 	Tile tiles[32 * MAX_PLAYERS];
 	uint32_t cursor_id;
 	uint32_t num_players;
 	uint32_t selected_id;
-} Field;
+};
 
 void createEdge(Field *field, uint32_t a, uint32_t b);
-void createField(Field *field);
-void markReachableNodes(Field *field, uint64_t start, uint64_t type, bool is_on_opposing_half, bool is_on_spawn_field);
+void initializeNeighborGraph(Field *field);
+void initializeField(Field *field);
+void markReachableNodes(Field *field, uint64_t start, uint64_t type);
