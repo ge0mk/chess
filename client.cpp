@@ -1,4 +1,3 @@
-#include "SDL_surface.h"
 #include "chess.h"
 
 #include <algorithm>
@@ -19,10 +18,15 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_mouse.h>
+#include <SDL3/SDL_surface.h>
 #include <SDL3_net/SDL_net.h>
 #include <SDL3_image/SDL_image.h>
 
 #include "glad.h"
+
+#include "imgui/imgui.h"
+#include "imgui/backends/imgui_impl_sdl3.h"
+#include "imgui/backends/imgui_impl_opengl3.h"
 
 #define PI 3.141592654f
 
@@ -54,11 +58,15 @@ struct VertexBuffer {
 };
 
 struct ViewportInfoUniformData {
+	float x_offset;
+	float y_offset;
+	float scale;
 	float aspect_ratio;
 };
 
 struct FieldShaderUniformData {
 	uint32_t num_players;
+	uint32_t player;
 };
 
 GLuint loadShader(std::span<uint8_t> source, GLenum type, ShaderFormat format) {
@@ -136,7 +144,11 @@ GLuint loadProgram(uint64_t num_shaders, ...) {
 
 class Game {
 public:
-	Game(float width, float height, const std::string& server_addr, uint16_t server_port) : width(width), height(height) {
+	Game(float width, float height) : width(width), height(height) {
+		field.num_players = 3;
+		initializeNeighborGraph(&field);
+		initializeField(&field);
+
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
@@ -159,16 +171,29 @@ public:
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+		glClearColor(0.2f, 0.2f, 0.2f, 0.0f);
+
+		viewport_info_uniform_data.scale = 0.2f;
+		viewport_info_uniform_data.x_offset = 0.0f;
+		viewport_info_uniform_data.y_offset = 0.0f;
+
+		field_shader_uniform_data.num_players = field.num_players;
 
 		loadShaders();
 		loadTextures();
+		createVertexBuffers();
+		createUniformBuffers();
 
-		connectToServer(server_addr, server_port);
-		scale = 0.5f / field.num_players;
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGuiIO& io = ImGui::GetIO(); (void)io;
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
+		io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
 
-		generateMeshes();
-		initUniformBuffers();
+		ImGui::StyleColorsDark();
+
+		ImGui_ImplSDL3_InitForOpenGL(window, gl_context);
+		ImGui_ImplOpenGL3_Init("#version 460");
 	}
 
 	~Game() {
@@ -202,9 +227,8 @@ public:
 		);
 	}
 
-	void initUniformBuffers() {
+	void createUniformBuffers() {
 		viewport_info_uniform_data.aspect_ratio = width / height;
-		field_shader_uniform_data.num_players = field.num_players;
 
 		glGenBuffers(1, &viewport_info_uniform_buffer);
 		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
@@ -234,7 +258,38 @@ public:
 		glGenerateMipmap(GL_TEXTURE_2D);
 	}
 
-	void generateMeshes() {
+	void createVertexBuffers() {
+		glGenVertexArrays(1, &field_mesh.vao);
+		glBindVertexArray(field_mesh.vao);
+
+		glGenBuffers(1, &field_mesh.handle);
+		glBindBuffer(GL_ARRAY_BUFFER, field_mesh.handle);
+
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
+		glEnableVertexAttribArray(1);
+		glVertexAttribIPointer(2, 1, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, id));
+		glEnableVertexAttribArray(2);
+
+
+		glGenVertexArrays(1, &piece_mesh.vao);
+		glBindVertexArray(piece_mesh.vao);
+
+		glGenBuffers(1, &piece_mesh.handle);
+		glBindBuffer(GL_ARRAY_BUFFER, piece_mesh.handle);
+
+		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
+		glEnableVertexAttribArray(0);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
+		glEnableVertexAttribArray(1);
+		glVertexAttribIPointer(2, 1, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, id));
+		glEnableVertexAttribArray(2);
+
+		updateVertexBufferData();
+	}
+
+	void updateVertexBufferData() {
 		field_mesh.vertex_count = 0;
 		piece_mesh.vertex_count = 0;
 
@@ -246,21 +301,21 @@ public:
 			panic("out of memory\n");
 		}
 
-		for (uint64_t segment = 0; segment < field.num_players * 2; segment++) {
-			const float angle_a = (float)(segment + 0) / (float)(field.num_players * 2) * 2.0f * PI;
-			const float angle_b = (float)(segment + 1) / (float)(field.num_players * 2) * 2.0f * PI;
+		for (uint64_t half_segment = 0; half_segment < field.num_players * 2; half_segment++) {
+			const float angle_a = -((half_segment + 0.0f) / (field.num_players * 2.0f) * 2.0f * PI + PI / (1.0f + 1.0f / (field.num_players - 1.0f)));
+			const float angle_b = -((half_segment + 1.0f) / (field.num_players * 2.0f) * 2.0f * PI + PI / (1.0f + 1.0f / (field.num_players - 1.0f)));
 
-			const float delta_a_x = -sinf(angle_a) * scale;
-			const float delta_a_y = +cosf(angle_a) * scale;
+			const float delta_a_x = -sinf(angle_a);
+			const float delta_a_y = +cosf(angle_a);
 
-			const float delta_b_x = -sinf(angle_b) * scale;
-			const float delta_b_y = +cosf(angle_b) * scale;
+			const float delta_b_x = -sinf(angle_b);
+			const float delta_b_y = +cosf(angle_b);
 
 			for (uint32_t a = 0; a < 4; a++) {
 				for (uint32_t b = 0; b < 4; b++) {
-					const uint32_t field_x = (segment % 2) ? (3 - b) : a + 4;
-					const uint32_t field_y = 3 - ((segment % 2) ? a : b);
-					const uint32_t field_z = segment >> 1;
+					const uint32_t field_x = (half_segment % 2) ? (3 - b) : a + 4;
+					const uint32_t field_y = 3 - ((half_segment % 2) ? a : b);
+					const uint32_t field_z = half_segment >> 1;
 
 					const float x0 = delta_a_x * (a + 0) + delta_b_x * (b + 0);
 					const float y0 = delta_a_y * (a + 0) + delta_b_y * (b + 0);
@@ -296,7 +351,7 @@ public:
 
 					#define addPieceVertex(X, Y, U, V) \
 						piece_vertices[piece_mesh.vertex_count++] = (Vertex){ \
-							.x = X + (U - 0.5f) * scale / 2, .y = Y + (V - 0.5f) * scale / 2, \
+							.x = X + (U - 0.5f) / 2, .y = Y + (V - 0.5f) / 2, \
 							.u = U, .v = 1 - V, \
 							.id = getId(field_x, field_y, field_z), \
 						};
@@ -314,35 +369,13 @@ public:
 			}
 		}
 
-		glGenVertexArrays(1, &field_mesh.vao);
-		glBindVertexArray(field_mesh.vao);
-
-		glGenBuffers(1, &field_mesh.handle);
 		glBindBuffer(GL_ARRAY_BUFFER, field_mesh.handle);
 		glBufferData(GL_ARRAY_BUFFER, field_mesh.vertex_count * sizeof(Vertex), field_vertices, GL_STATIC_DRAW);
 		free(field_vertices);
 
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
-		glEnableVertexAttribArray(1);
-		glVertexAttribIPointer(2, 1, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, id));
-		glEnableVertexAttribArray(2);
-
-		glGenVertexArrays(1, &piece_mesh.vao);
-		glBindVertexArray(piece_mesh.vao);
-
-		glGenBuffers(1, &piece_mesh.handle);
 		glBindBuffer(GL_ARRAY_BUFFER, piece_mesh.handle);
 		glBufferData(GL_ARRAY_BUFFER, piece_mesh.vertex_count * sizeof(Vertex), piece_vertices, GL_STATIC_DRAW);
 		free(piece_vertices);
-
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
-		glEnableVertexAttribArray(0);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
-		glEnableVertexAttribArray(1);
-		glVertexAttribIPointer(2, 1, GL_INT, sizeof(Vertex), (void*)offsetof(Vertex, id));
-		glEnableVertexAttribArray(2);
 	}
 
 	void run() {
@@ -350,30 +383,48 @@ public:
 			handleEvents();
 			receiveFromServer();
 
-			float xpos, ypos;
-			SDL_GetMouseState(&xpos, &ypos);
-			field.cursor_id = getTileUnderCursor((xpos / width * 2 - 1.0f) * (width / height), 1.0f - ypos / height * 2, field.num_players, scale);
+			glClear(GL_COLOR_BUFFER_BIT);
 
 			render();
+
+			ImGui_ImplOpenGL3_NewFrame();
+			ImGui_ImplSDL3_NewFrame();
+			ImGui::NewFrame();
+
+			renderUI();
+
+			ImGui::Render();
+			ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+
+			SDL_GL_SwapWindow(window);
 		}
 	}
 
 	void handleEvents() {
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
+			ImGui_ImplSDL3_ProcessEvent(&event);
+
 			switch (event.type) {
 				case SDL_EVENT_QUIT: quit = true; break;
 				case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED: onFramebufferResized(event.window); break;
-				case SDL_EVENT_MOUSE_BUTTON_UP: onMouseButtonUp(event.button);
+				case SDL_EVENT_MOUSE_BUTTON_UP: if (!ImGui::GetIO().WantCaptureMouse) onMouseButtonUp(event.button); break;
+				case SDL_EVENT_MOUSE_MOTION: if (!ImGui::GetIO().WantCaptureMouse) onMouseMoved(event.motion); break;
+				case SDL_EVENT_MOUSE_WHEEL:  if (!ImGui::GetIO().WantCaptureMouse) onMouseWheel(event.wheel); break;
 			}
 		}
 	}
 
 	void render() {
-		glClear(GL_COLOR_BUFFER_BIT);
+		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
+
+		field_shader_uniform_data.num_players = field.num_players;
+		glBindBuffer(GL_UNIFORM_BUFFER, field_shader_uniform_buffer);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(FieldShaderUniformData), &field_shader_uniform_data, GL_DYNAMIC_DRAW);
 
 		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(field.cursor_id), &field.tiles, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 4, &field.tiles, GL_DYNAMIC_DRAW);
 
 		glUseProgram(field_shader);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
@@ -391,8 +442,46 @@ public:
 
 		glBindVertexArray(piece_mesh.vao);
 		glDrawArrays(GL_TRIANGLES, 0, piece_mesh.vertex_count);
+	}
 
-		SDL_GL_SwapWindow(window);
+	void renderUI() {
+		ImGui::Begin("test"); {
+			ImGui::InputText("address", server_address.data(), server_address.size());
+			ImGui::InputInt("port", &server_port);
+
+			if (socket) {
+				if (ImGui::Button("disconnect")) {
+					disconnectFromServer();
+				}
+			} else {
+				if (ImGui::Button("connect")) {
+					connectToServer(server_address, server_port);
+				}
+			}
+
+			ImGui::Separator();
+
+			ImGui::Text("resolution: %f, %f", width, height);
+			ImGui::SliderFloat("scale", &viewport_info_uniform_data.scale, 0.1f, 0.4f);
+			ImGui::SliderFloat2("offset", &viewport_info_uniform_data.x_offset, -1.0f, 1.0f);
+
+			ImGui::Separator();
+
+			if (ImGui::Button("reset field")) {
+				initializeField(&field);
+			}
+
+			if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, 5)) {
+				field_shader_uniform_data.num_players = field.num_players;
+				initializeNeighborGraph(&field);
+				initializeField(&field);
+				updateVertexBufferData();
+			}
+
+			if (ImGui::SliderInt("current player", (int*)&field.player, 0, field.num_players - 1)) {
+				field_shader_uniform_data.player = field.player;
+			}
+		} ImGui::End();
 	}
 
 	void receiveFromServer() {
@@ -436,6 +525,8 @@ public:
 		printf("connected to server (%s), %i players\n", SDLNet_GetAddressString(addr), field.num_players);
 
 		SDLNet_UnrefAddress(addr);
+
+		updateVertexBufferData();
 	}
 
 	void disconnectFromServer() {
@@ -450,8 +541,6 @@ public:
 		glViewport(0, 0, width, height);
 
 		viewport_info_uniform_data.aspect_ratio = width / height;
-		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
 	}
 
 	void onMouseButtonUp(SDL_MouseButtonEvent event) {
@@ -471,6 +560,19 @@ public:
 		}
 	}
 
+	void onMouseMoved(SDL_MouseMotionEvent event) {
+		if (event.state & SDL_BUTTON(3)) {
+			viewport_info_uniform_data.x_offset = std::clamp(viewport_info_uniform_data.x_offset + event.xrel / width * 2, -1.0f, 1.0f);
+			viewport_info_uniform_data.y_offset = std::clamp(viewport_info_uniform_data.y_offset - event.yrel / height * 2, -1.0f, 1.0f);
+		} else {
+			field.cursor_id = getTileUnderCursor((event.x / width * 2 - 1.0f) * (width / height), 1.0f - event.y / height * 2);
+		}
+	}
+
+	void onMouseWheel(SDL_MouseWheelEvent event) {
+		viewport_info_uniform_data.scale = std::clamp(viewport_info_uniform_data.scale + event.y * 0.025f, 0.1f, 0.4f);
+	}
+
 	void moveFigure(uint32_t from, uint32_t to) {
 		field.tiles[to].figure = field.tiles[from].figure;
 		field.tiles[to].player = field.tiles[from].player;
@@ -485,20 +587,21 @@ public:
 		}
 	}
 
-	uint64_t getTileUnderCursor(float x, float y, float segment_count, float scale) {
+	uint64_t getTileUnderCursor(float x, float y) {
+		x = (x - viewport_info_uniform_data.x_offset) / viewport_info_uniform_data.scale;
+		y = (y - viewport_info_uniform_data.y_offset) / viewport_info_uniform_data.scale;
+
 		const float angle = 1.0f - (atanf(-y / x) / (2.0f * PI) + 0.25f + 0.5f * (float)(x < 0.0f));
-		const uint64_t tile_z = floorf(angle * segment_count);
+		const uint32_t half_segment = (field.num_players * 2 - (uint32_t)floorf(angle * field.num_players * 2.0f) + field.num_players) % (field.num_players * 2);
 
-		const float half_segment = floorf(angle * segment_count * 2);
+		const float angle_a = -((half_segment + 0.0f) / (field.num_players * 2.0f) * 2.0f * PI + PI / (1.0f + 1.0f / (field.num_players - 1.0f)));
+		const float angle_b = -((half_segment + 1.0f) / (field.num_players * 2.0f) * 2.0f * PI + PI / (1.0f + 1.0f / (field.num_players - 1.0f)));
 
-		const float angle_a = (half_segment + 0) / (segment_count * 2) * 2.0f * PI;
-		const float angle_b = (half_segment + 1) / (segment_count * 2) * 2.0f * PI;
+		const float x1 = -sinf(angle_a);
+		const float y1 = +cosf(angle_a);
 
-		const float x1 = -sinf(angle_a) * scale;
-		const float y1 = +cosf(angle_a) * scale;
-
-		const float x2 = -sinf(angle_b) * scale;
-		const float y2 = +cosf(angle_b) * scale;
+		const float x2 = -sinf(angle_b);
+		const float y2 = +cosf(angle_b);
 
 		// a * x1 + b * x2 = x
 		// a * y1 + b * y2 = y
@@ -506,7 +609,7 @@ public:
 		const float a = fabsf(x1) < 0.01 ? (y - b * y2) / y1 : (x - b * x2) / x1;
 
 		uint64_t tile_x, tile_y;
-		if ((int)half_segment % 2) {
+		if (half_segment % 2) {
 			tile_x = std::clamp(3 - std::floor(b), 0.0f, 7.0f);
 			tile_y = 3 - std::clamp(std::floor(a), 0.0f, 3.0f);
 		} else {
@@ -514,7 +617,7 @@ public:
 			tile_y = 3 - std::clamp(std::floor(b), 0.0f, 3.0f);
 		}
 
-		return getId(tile_x, tile_y, tile_z);
+		return getId(tile_x, tile_y, half_segment / 2);
 	}
 
 private:
@@ -523,7 +626,9 @@ private:
 	float width, height;
 
 	bool quit;
-	float scale;
+
+	std::string server_address = "127.0.0.1" + std::string(256, '\0');
+	int server_port = 1234;
 
 	SDLNet_StreamSocket *socket;
 
@@ -542,7 +647,7 @@ private:
 	Field field;
 };
 
-int main([[maybe_unused]] int argc, char *argv[]) {
+int main(int, char *[]) {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) != 0) {
 		panic("Failed to initialize SDL_net\n");
 	}
@@ -555,7 +660,7 @@ int main([[maybe_unused]] int argc, char *argv[]) {
 		panic("Failed to initialize SDL_image\n");
 	}
 
-	Game game(1000, 1000, argv[1], atoi(argv[2]));
+	Game game(1000, 1000);
 	game.run();
 
 	IMG_Quit();

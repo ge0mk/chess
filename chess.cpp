@@ -101,10 +101,36 @@ void markReachableNodes(Field *field, uint64_t start, uint64_t type) {
 	switch (type) {
 		case None: break;
 		case Pawn: {
-			const uint64_t current = forward(packIdAndDirection(start, is_on_opposing_half ? South : North));
-			markReachable(extractId(current));
+			uint64_t current = forward(packIdAndDirection(start, is_on_opposing_half ? South : North));
+			if (isValidId(extractId(current)) && field->tiles[extractId(current)].figure == None) {
+				markReachable(extractId(current));
+			}
+
+			uint64_t left = left(current);
+			if (isValidId(extractId(left)) && field->tiles[extractId(left)].figure != None) {
+				markReachable(extractId(left));
+			}
+
+			left = diagonalLeft(packIdAndDirection(start, is_on_opposing_half ? South : North));
+			if (isValidId(extractId(left)) && field->tiles[extractId(left)].figure != None) {
+				markReachable(extractId(left));
+			}
+
+			uint64_t right = right(current);
+			if (isValidId(extractId(right)) && field->tiles[extractId(right)].figure != None) {
+				markReachable(extractId(right));
+			}
+
+			right = diagonalRight(packIdAndDirection(start, is_on_opposing_half ? South : North));
+			if (isValidId(extractId(right)) && field->tiles[extractId(right)].figure != None) {
+				markReachable(extractId(right));
+			}
+
 			if (!field->tiles[start].was_moved && isValidId(extractId(current)) && field->tiles[extractId(current)].figure == None) {
-				markReachable(extractId(forward(current)));
+				current = forward(current);
+				if (isValidId(extractId(current)) && field->tiles[extractId(current)].figure == None) {
+					markReachable(extractId(current));
+				}
 			}
 		} break;
 		case Bishop: {

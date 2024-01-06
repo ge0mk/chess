@@ -41,6 +41,7 @@ struct Field {
 	uint32_t cursor_id;
 	uint32_t num_players;
 	uint32_t selected_id;
+	uint32_t player;
 };
 
 void createEdge(Field *field, uint32_t a, uint32_t b);
