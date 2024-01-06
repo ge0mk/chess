@@ -1,9 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE svg PUBLIC '-//W3C//DTD SVG 1.1//EN'  'http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd'>
-<!--remove fill and stroke for variable coloration-->
 <svg
-    fill="var(--color, #fff)" 
-    stroke="var(--outline, #000)"
+    fill="var(--color, #f00)"
+    stroke="var(--outline, #0f0)"
     stroke-width="2px"
     stroke-linecap="round"
     stroke-linejoin="round"

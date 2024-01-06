@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
 <svg
-    fill="var(--color, #fff)" 
-    stroke="var(--outline, #000)"
+    fill="var(--color, #f00)"
+    stroke="var(--outline, #0f0)"
     stroke-width="2px"
     stroke-linecap="round"
     stroke-linejoin="round"
@@ -12,6 +12,6 @@
     xmlns="http://www.w3.org/2000/svg">
     <path d="M35,24C35,28 33,33 24,35C18,38 16,47 13,47C12,46 9,47 13,42C9,47 4,43 5,38C5,33 11,28 12,24C10,19 16,14 16,14L17,5L25,10L29,5L32,12C57,7 58,47 60,59L20,59C18,50 33,45 32,32"/>
     <path d="M25,10L17,14"/>
-    <path fill="var(--outline, #000)" stroke="None" d="M19,18c-2,-1 -4,5 -2,6c2,1 4,-5 2,-6Z"/>
-    <path fill="var(--outline, #000)" stroke="None" d="M10,35c-2,0 -3,5 -1,5c2,0 3,-5 1,-5Z"/>
+    <path fill="var(--outline, #0f0)" stroke="None" d="M19,18c-2,-1 -4,5 -2,6c2,1 4,-5 2,-6Z"/>
+    <path fill="var(--outline, #0f0)" stroke="None" d="M10,35c-2,0 -3,5 -1,5c2,0 3,-5 1,-5Z"/>
 </svg>

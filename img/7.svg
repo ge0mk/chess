@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.0//EN" "http://www.w3.org/TR/2001/REC-SVG-20010904/DTD/svg10.dtd">
+<svg
+    fill="var(--color, #f00)"
+    stroke="var(--outline, #0f0)"
+    stroke-width="2px"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    viewBox="0 0 64 64"
+    version="1.1"
+    id="pawn"
+    xmlns="http://www.w3.org/2000/svg">
+</svg>
