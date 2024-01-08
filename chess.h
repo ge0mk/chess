@@ -9,7 +9,7 @@
 #define extractId(v) ((v)>>2)
 #define extractDirection(v) ((v) & 0b00000011)
 
-#define MAX_PLAYERS 10
+#define MAX_PLAYERS 8
 
 enum Direction {
 	North,

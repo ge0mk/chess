@@ -146,6 +146,7 @@ class Game {
 public:
 	Game(float width, float height) : width(width), height(height) {
 		field.num_players = 3;
+		field.player = 0;
 		initializeNeighborGraph(&field);
 		initializeField(&field);
 
@@ -244,10 +245,23 @@ public:
 	}
 
 	void loadTextures() {
+		glGenTextures(1, &palette_texture);
+		glBindTexture(GL_TEXTURE_2D, palette_texture);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+		SDL_Surface *palette = IMG_Load("palette.png");
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, palette->w, palette->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, palette->pixels);
+		SDL_DestroySurface(palette);
+
+		glGenerateMipmap(GL_TEXTURE_2D);
+
 		glGenTextures(1, &spritesheet_texture);
 		glBindTexture(GL_TEXTURE_2D, spritesheet_texture);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_MIRRORED_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_MIRRORED_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
@@ -426,19 +440,31 @@ public:
 		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 4, &field.tiles, GL_DYNAMIC_DRAW);
 
+		// draw field
 		glUseProgram(field_shader);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, palette_texture);
+		glUniform1i(0, 0);
+
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, field_shader_uniform_buffer);
 		glBindVertexArray(field_mesh.vao);
 		glDrawArrays(GL_TRIANGLES, 0, field_mesh.vertex_count);
 
+		// draw pieces
 		glUseProgram(piece_shader);
+
 		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, palette_texture);
+		glUniform1i(0, 0);
+
+		glActiveTexture(GL_TEXTURE1);
 		glBindTexture(GL_TEXTURE_2D, spritesheet_texture);
+		glUniform1i(1, 1);
 
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, piece_shader_uniform_buffer);
-		glUniform1i(0, 0);
 
 		glBindVertexArray(piece_mesh.vao);
 		glDrawArrays(GL_TRIANGLES, 0, piece_mesh.vertex_count);
@@ -471,7 +497,7 @@ public:
 				initializeField(&field);
 			}
 
-			if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, 5)) {
+			if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, MAX_PLAYERS)) {
 				field_shader_uniform_data.num_players = field.num_players;
 				initializeNeighborGraph(&field);
 				initializeField(&field);
@@ -566,6 +592,7 @@ public:
 			viewport_info_uniform_data.y_offset = std::clamp(viewport_info_uniform_data.y_offset - event.yrel / height * 2, -1.0f, 1.0f);
 		} else {
 			field.cursor_id = getTileUnderCursor((event.x / width * 2 - 1.0f) * (width / height), 1.0f - event.y / height * 2);
+			field.cursor_id = (field.cursor_id + (field.player<<5)) % (field.num_players<<5);
 		}
 	}
 
@@ -634,7 +661,7 @@ private:
 
 	GLuint field_shader, piece_shader;
 	VertexBuffer field_mesh, piece_mesh;
-	GLuint spritesheet_texture;
+	GLuint palette_texture, spritesheet_texture;
 
 	GLuint viewport_info_uniform_buffer;
 	ViewportInfoUniformData viewport_info_uniform_data;
