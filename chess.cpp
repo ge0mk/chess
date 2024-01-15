@@ -43,12 +43,19 @@ void initializeNeighborGraph(Field *field) {
 }
 
 void initializeField(Field *field) {
-	for (uint64_t id = 0; id < field->num_players * 32; id++) {
-		field->tiles[id].figure = None;
-		field->tiles[id].player = 0;
-		field->tiles[id].is_reachable = 0;
-		field->tiles[id].was_moved = 0;
+	field->cursor_id = 0;
+	field->selected_id = 0;
+	field->player_pov = 0;
+	field->current_player = 0;
+
+	for (uint64_t id = 0; id < MAX_PLAYERS * 32 + 4; id++) {
+		field->tiles[id] = { 0, 0, 0, 0 };
 	}
+
+	field->tiles[32 * MAX_PLAYERS + 0].figure = Bishop;
+	field->tiles[32 * MAX_PLAYERS + 1].figure = Knight;
+	field->tiles[32 * MAX_PLAYERS + 2].figure = Rook;
+	field->tiles[32 * MAX_PLAYERS + 3].figure = Queen;
 
 	for (uint64_t z = 0; z < field->num_players; z++) {
 		for (uint64_t x = 0; x < 8; x++) {
@@ -126,7 +133,7 @@ void markReachableNodes(Field *field, uint64_t start, uint64_t type) {
 				markReachable(extractId(right));
 			}
 
-			if (!field->tiles[start].was_moved && isValidId(extractId(current)) && field->tiles[extractId(current)].figure == None) {
+			if (field->tiles[start].move_count == 0 && isValidId(extractId(current)) && field->tiles[extractId(current)].figure == None) {
 				current = forward(current);
 				if (isValidId(extractId(current)) && field->tiles[extractId(current)].figure == None) {
 					markReachable(extractId(current));

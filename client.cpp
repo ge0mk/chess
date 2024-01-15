@@ -64,11 +64,6 @@ struct ViewportInfoUniformData {
 	float aspect_ratio;
 };
 
-struct FieldShaderUniformData {
-	uint32_t num_players;
-	uint32_t player;
-};
-
 GLuint loadShader(std::span<uint8_t> source, GLenum type, ShaderFormat format) {
 	if (source.size() == 0) {
 		return -1;
@@ -146,7 +141,6 @@ class Game {
 public:
 	Game(float width, float height) : width(width), height(height) {
 		field.num_players = 3;
-		field.player = 0;
 		initializeNeighborGraph(&field);
 		initializeField(&field);
 
@@ -178,8 +172,6 @@ public:
 		viewport_info_uniform_data.x_offset = 0.0f;
 		viewport_info_uniform_data.y_offset = 0.0f;
 
-		field_shader_uniform_data.num_players = field.num_players;
-
 		loadShaders();
 		loadTextures();
 		createVertexBuffers();
@@ -195,6 +187,8 @@ public:
 
 		ImGui_ImplSDL3_InitForOpenGL(window, gl_context);
 		ImGui_ImplOpenGL3_Init("#version 460");
+
+		connectToServer(server_address, server_port);
 	}
 
 	~Game() {
@@ -208,16 +202,6 @@ public:
 
 	void loadShaders() {
 		field_shader = loadProgram(2,
-	#if defined(SPIRV_SHADERS)
-			GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.vert.spv",
-			GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.frag.spv"
-	#else
-			GL_VERTEX_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.vert",
-			GL_FRAGMENT_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.frag"
-	#endif
-		);
-
-		piece_shader = loadProgram(2,
 	#if defined(SPIRV_SHADERS)
 			GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/piece.vert.spv",
 			GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/piece.frag.spv"
@@ -235,12 +219,8 @@ public:
 		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
 
-		glGenBuffers(1, &field_shader_uniform_buffer);
-		glBindBuffer(GL_UNIFORM_BUFFER, field_shader_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(FieldShaderUniformData), &field_shader_uniform_data, GL_DYNAMIC_DRAW);
-
-		glGenBuffers(1, &piece_shader_uniform_buffer);
-		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
+		glGenBuffers(1, &field_uniform_buffer);
+		glBindBuffer(GL_UNIFORM_BUFFER, field_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(field.cursor_id), &field.tiles, GL_DYNAMIC_DRAW);
 	}
 
@@ -287,11 +267,11 @@ public:
 		glEnableVertexAttribArray(2);
 
 
-		glGenVertexArrays(1, &piece_mesh.vao);
-		glBindVertexArray(piece_mesh.vao);
+		glGenVertexArrays(1, &field_mesh.vao);
+		glBindVertexArray(field_mesh.vao);
 
-		glGenBuffers(1, &piece_mesh.handle);
-		glBindBuffer(GL_ARRAY_BUFFER, piece_mesh.handle);
+		glGenBuffers(1, &field_mesh.handle);
+		glBindBuffer(GL_ARRAY_BUFFER, field_mesh.handle);
 
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), 0);
 		glEnableVertexAttribArray(0);
@@ -305,13 +285,12 @@ public:
 
 	void updateVertexBufferData() {
 		field_mesh.vertex_count = 0;
-		piece_mesh.vertex_count = 0;
+		field_mesh.vertex_count = 0;
 
-		const uint64_t vertex_count = (field.num_players * 32) * 6;
-		Vertex *field_vertices = (Vertex*)malloc(vertex_count * sizeof(Vertex));
-		Vertex *piece_vertices = (Vertex*)malloc(vertex_count * sizeof(Vertex));
+		const uint64_t vertex_count = (field.num_players * 32 * 2 + 4) * 6;
+		Vertex *vertices = (Vertex*)malloc(vertex_count * sizeof(Vertex));
 
-		if (!field_vertices || !piece_vertices) {
+		if (!vertices) {
 			panic("out of memory\n");
 		}
 
@@ -347,10 +326,10 @@ public:
 					const float y_center = (y0 + y3) / 2.0f;
 
 					#define addFieldVertex(X, Y, U, V) \
-						field_vertices[field_mesh.vertex_count++] = (Vertex){ \
+						vertices[field_mesh.vertex_count++] = (Vertex){ \
 							.x = X, .y = Y, \
 							.u = U, .v = V, \
-							.id = getId(field_x, field_y, field_z), \
+							.id = getId(field_x, field_y, field_z) | 0x200, \
 						};
 
 					addFieldVertex(x1, y1, 1, 0);
@@ -364,7 +343,7 @@ public:
 					#undef addFieldVertex
 
 					#define addPieceVertex(X, Y, U, V) \
-						piece_vertices[piece_mesh.vertex_count++] = (Vertex){ \
+						vertices[field_mesh.vertex_count++] = (Vertex){ \
 							.x = X + (U - 0.5f) / 2, .y = Y + (V - 0.5f) / 2, \
 							.u = U, .v = 1 - V, \
 							.id = getId(field_x, field_y, field_z), \
@@ -383,13 +362,28 @@ public:
 			}
 		}
 
-		glBindBuffer(GL_ARRAY_BUFFER, field_mesh.handle);
-		glBufferData(GL_ARRAY_BUFFER, field_mesh.vertex_count * sizeof(Vertex), field_vertices, GL_STATIC_DRAW);
-		free(field_vertices);
+		for (uint32_t i = 0; i < 4; i++) {
+			#define addVertex(U, V) \
+				vertices[field_mesh.vertex_count++] = (Vertex){ \
+					.x = (float(i) - 1.5f) + (U - 0.5f) / 1.5f, .y = (V - 0.5f) / 1.5f, \
+					.u = U * 1.5f - 0.25f, .v = (1 - V) * 1.5f - 0.25f, \
+					.id = MAX_PLAYERS * 32 + i, \
+				};
 
-		glBindBuffer(GL_ARRAY_BUFFER, piece_mesh.handle);
-		glBufferData(GL_ARRAY_BUFFER, piece_mesh.vertex_count * sizeof(Vertex), piece_vertices, GL_STATIC_DRAW);
-		free(piece_vertices);
+			addVertex(1, 0);
+			addVertex(0, 0);
+			addVertex(0, 1);
+
+			addVertex(0, 1);
+			addVertex(1, 1);
+			addVertex(1, 0);
+
+			#undef addVertex
+		}
+
+		glBindBuffer(GL_ARRAY_BUFFER, field_mesh.handle);
+		glBufferData(GL_ARRAY_BUFFER, field_mesh.vertex_count * sizeof(Vertex), vertices, GL_STATIC_DRAW);
+		free(vertices);
 	}
 
 	void run() {
@@ -433,27 +427,10 @@ public:
 		glBindBuffer(GL_UNIFORM_BUFFER, viewport_info_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
 
-		field_shader_uniform_data.num_players = field.num_players;
-		glBindBuffer(GL_UNIFORM_BUFFER, field_shader_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(FieldShaderUniformData), &field_shader_uniform_data, GL_DYNAMIC_DRAW);
-
-		glBindBuffer(GL_UNIFORM_BUFFER, piece_shader_uniform_buffer);
+		glBindBuffer(GL_UNIFORM_BUFFER, field_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 4, &field.tiles, GL_DYNAMIC_DRAW);
 
-		// draw field
 		glUseProgram(field_shader);
-
-		glActiveTexture(GL_TEXTURE0);
-		glBindTexture(GL_TEXTURE_2D, palette_texture);
-		glUniform1i(0, 0);
-
-		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
-		glBindBufferBase(GL_UNIFORM_BUFFER, 1, field_shader_uniform_buffer);
-		glBindVertexArray(field_mesh.vao);
-		glDrawArrays(GL_TRIANGLES, 0, field_mesh.vertex_count);
-
-		// draw pieces
-		glUseProgram(piece_shader);
 
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, palette_texture);
@@ -464,10 +441,15 @@ public:
 		glUniform1i(1, 1);
 
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
-		glBindBufferBase(GL_UNIFORM_BUFFER, 1, piece_shader_uniform_buffer);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 1, field_uniform_buffer);
 
-		glBindVertexArray(piece_mesh.vao);
-		glDrawArrays(GL_TRIANGLES, 0, piece_mesh.vertex_count);
+		glBindVertexArray(field_mesh.vao);
+
+		if (show_promotion_dialog) {
+			glDrawArrays(GL_TRIANGLES, 0, field_mesh.vertex_count);
+		} else {
+			glDrawArrays(GL_TRIANGLES, 0, field_mesh.vertex_count - 4 * 6);
+		}
 	}
 
 	void renderUI() {
@@ -498,15 +480,12 @@ public:
 			}
 
 			if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, MAX_PLAYERS)) {
-				field_shader_uniform_data.num_players = field.num_players;
 				initializeNeighborGraph(&field);
 				initializeField(&field);
 				updateVertexBufferData();
 			}
 
-			if (ImGui::SliderInt("current player", (int*)&field.player, 0, field.num_players - 1)) {
-				field_shader_uniform_data.player = field.player;
-			}
+			ImGui::SliderInt("player pov", (int*)&field.player_pov, 0, field.num_players - 1);
 		} ImGui::End();
 	}
 
@@ -536,11 +515,12 @@ public:
 		SDLNet_WaitUntilResolved(addr, -1);
 		socket = SDLNet_CreateClient(addr, port);
 
-		if (!socket) {
-			panic("Failed to connect to server\n");
+		if (SDLNet_WaitUntilConnected(socket, -1) != 1) {
+			printf("couldn't connect to server (%s)\n", SDLNet_GetAddressString(addr));
+			socket = NULL;
+			return;
 		}
 
-		SDLNet_WaitUntilConnected(socket, -1);
 		SDLNet_WaitUntilInputAvailable((void**)&socket, 1, -1);
 		receiveFromServer();
 
@@ -571,17 +551,20 @@ public:
 
 	void onMouseButtonUp(SDL_MouseButtonEvent event) {
 		if (event.button == 1) {
-			if (field.tiles[field.cursor_id].is_reachable) {
-				for (uint64_t i = 0; i < field.num_players * 32; i++) {
-					field.tiles[i].is_reachable = 0;
-				}
-				moveFigure(field.selected_id, field.cursor_id);
+			if (show_promotion_dialog) {
+				promotePawn();
 			} else {
+				const bool is_reachable = field.tiles[field.cursor_id].is_reachable;
 				for (uint64_t i = 0; i < field.num_players * 32; i++) {
 					field.tiles[i].is_reachable = 0;
 				}
-				markReachableNodes(&field, field.cursor_id, field.tiles[field.cursor_id].figure);
-				field.selected_id = field.cursor_id;
+
+				if (is_reachable) {
+					moveFigure(field.selected_id, field.cursor_id);
+				} else if (field.tiles[field.cursor_id].player == field.player_pov && field.player_pov == field.current_player) {
+					markReachableNodes(&field, field.cursor_id, field.tiles[field.cursor_id].figure);
+					field.selected_id = field.cursor_id;
+				}
 			}
 		}
 	}
@@ -592,7 +575,9 @@ public:
 			viewport_info_uniform_data.y_offset = std::clamp(viewport_info_uniform_data.y_offset - event.yrel / height * 2, -1.0f, 1.0f);
 		} else {
 			field.cursor_id = getTileUnderCursor((event.x / width * 2 - 1.0f) * (width / height), 1.0f - event.y / height * 2);
-			field.cursor_id = (field.cursor_id + (field.player<<5)) % (field.num_players<<5);
+			if (field.cursor_id < MAX_PLAYERS * 32) {
+				field.cursor_id = (field.cursor_id + (field.player_pov<<5)) % (field.num_players<<5);
+			}
 		}
 	}
 
@@ -603,18 +588,75 @@ public:
 	void moveFigure(uint32_t from, uint32_t to) {
 		field.tiles[to].figure = field.tiles[from].figure;
 		field.tiles[to].player = field.tiles[from].player;
-		field.tiles[to].was_moved = true;
+		field.tiles[to].move_count = field.tiles[from].move_count + 1;
 		field.tiles[from].figure = None;
 
+		if (getY(to) == 0 && field.tiles[to].figure == Pawn) {
+			field.selected_id = to;
+			for (int64_t i = 0; i < 4; i++) {
+				field.tiles[32 * MAX_PLAYERS + i].player = field.current_player;
+			}
+			show_promotion_dialog = true;
+			return;
+		}
+
+		rotateToNextPlayer();
+
 		if (socket) {
-			if (SDLNet_WriteToStreamSocket(socket, &field, sizeof(Field)) != 0) {
+			Message msg{
+				.type = Message::Move,
+				.player = field.player_pov,
+				.move = {from, to, FigureType::None},
+			};
+
+			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
 				SDLNet_DestroyStreamSocket(socket);
 				socket = NULL;
 			}
 		}
 	}
 
+	void promotePawn() {
+		field.tiles[field.selected_id].figure = field.tiles[field.cursor_id].figure;
+		show_promotion_dialog = false;
+
+		rotateToNextPlayer();
+
+		if (socket) {
+			Message msg{
+				.type = Message::Move,
+				.player = field.player_pov,
+				.move = {
+					getId(getX(field.selected_id), getY(field.selected_id) + 1, getZ(field.selected_id)),
+					field.selected_id,
+					field.tiles[field.cursor_id].figure
+				},
+			};
+
+			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
+				SDLNet_DestroyStreamSocket(socket);
+				socket = NULL;
+			}
+		}
+	}
+
+	void rotateToNextPlayer() {
+		if (isLocalGame()) {
+			field.player_pov = (field.player_pov + 1) % field.num_players;
+			field.current_player = (field.current_player + 1) % field.num_players;
+			field.cursor_id = (field.cursor_id + 32) % (field.num_players * 32);
+		}
+	}
+
+	bool isLocalGame() {
+		return socket == NULL;
+	}
+
 	uint64_t getTileUnderCursor(float x, float y) {
+		if (show_promotion_dialog) {
+			return MAX_PLAYERS * 32 + std::clamp(int(x / viewport_info_uniform_data.scale + 2), 0, 3);
+		}
+
 		x = (x - viewport_info_uniform_data.x_offset) / viewport_info_uniform_data.scale;
 		y = (y - viewport_info_uniform_data.y_offset) / viewport_info_uniform_data.scale;
 
@@ -652,31 +694,30 @@ private:
 	SDL_GLContext gl_context;
 	float width, height;
 
-	bool quit;
+	bool quit = false;
 
 	std::string server_address = "127.0.0.1" + std::string(256, '\0');
 	int server_port = 1234;
 
+	bool show_promotion_dialog = false;
+
 	SDLNet_StreamSocket *socket;
 
-	GLuint field_shader, piece_shader;
-	VertexBuffer field_mesh, piece_mesh;
+	GLuint field_shader;
+	VertexBuffer field_mesh;
 	GLuint palette_texture, spritesheet_texture;
 
 	GLuint viewport_info_uniform_buffer;
 	ViewportInfoUniformData viewport_info_uniform_data;
 
-	GLuint field_shader_uniform_buffer;
-	FieldShaderUniformData field_shader_uniform_data;
-
-	GLuint piece_shader_uniform_buffer;
+	GLuint field_uniform_buffer;
 
 	Field field;
 };
 
 int main(int, char *[]) {
 	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_TIMER | SDL_INIT_GAMEPAD | SDL_INIT_EVENTS) != 0) {
-		panic("Failed to initialize SDL_net\n");
+		panic("Failed to initialize SDL\n");
 	}
 
 	if (SDLNet_Init() != 0) {

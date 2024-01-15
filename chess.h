@@ -32,16 +32,34 @@ struct Tile {
 	uint8_t figure;
 	uint8_t player;
 	uint8_t is_reachable;
-	uint8_t was_moved;
+	uint8_t move_count;
 };
 
 struct Field {
 	uint32_t neighbors[32 * MAX_PLAYERS][4];
-	Tile tiles[32 * MAX_PLAYERS];
+	Tile tiles[32 * MAX_PLAYERS + 4];
 	uint32_t cursor_id;
 	uint32_t num_players;
 	uint32_t selected_id;
+	uint32_t player_pov;
+	uint32_t current_player;
+};
+
+struct Message {
+	enum : uint32_t {
+		None,
+		Move,
+	} type;
+
 	uint32_t player;
+	union {
+		struct {} none;
+
+		struct {
+			uint32_t from, to;
+			uint8_t promotion;
+		} move;
+	};
 };
 
 void createEdge(Field *field, uint32_t a, uint32_t b);

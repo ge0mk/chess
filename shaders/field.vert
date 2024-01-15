@@ -14,7 +14,8 @@ layout (binding = 0, std140) uniform aspect_ratio_uniform_data {
 };
 
 void main() {
-	gl_Position = vec4((pos * scale + offset) / vec2(aspect_ratio, 1.0f), 0.1f, 1.0);
+	const vec2 pos2 = (pos * scale + offset * float((id & 0x100) == 0));
+	gl_Position = vec4(pos2 / vec2(aspect_ratio, 1.0f), 0.1f, 1.0);
 	out_uv = uv;
 	out_id = id;
 }
