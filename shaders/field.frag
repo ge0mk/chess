@@ -10,6 +10,11 @@
 #define Queen 5
 #define King 6
 
+#define Move 1
+#define Capture 2
+#define Castle 3
+#define EnPassant 4
+
 layout (location = 1) in vec2 uv;
 layout (location = 2) flat in int id;
 
@@ -42,8 +47,11 @@ void main() {
 		const int tile = tiles[id2 / 4][id2 % 4];
 		const int figure = (tile >> 0) & 255;
 		const int owner = (tile >> 8) & 255;
+		const int move_type = (tile >> 16) & 255;
+		//const int move_count = (tile >> 24) & 255;
+
 		const bool is_cursor = id2 == cursor_id;
-		const bool selected = (((tile >> 16) & 255) != 0) || is_cursor;
+		const bool selected = move_type != 0 || is_cursor;
 
 		const vec4 figure_base = texture(spritesheet, uv / vec2(8, 1) + vec2(float(figure) / 8, 0));
 		const vec4 figure_fill = texture(palette, vec2(float(owner) / MAX_PLAYERS, 0.375));
@@ -61,7 +69,7 @@ void main() {
 		} else {
 			const vec4 selection_base = texture(spritesheet, uv / vec2(8, 1) + vec2(0.875, 0));
 			const vec4 selection_border = texture(palette, vec2((float(!parity) + 2) / MAX_PLAYERS, 0.125));
-			const vec4 selection_fill = texture(palette, vec2(float((is_cursor ? 2 : int(figure != 0)) + 4) / MAX_PLAYERS, 0.125));
+			const vec4 selection_fill = texture(palette, vec2(float((is_cursor ? 2 : int(move_type == Capture)) + 4) / MAX_PLAYERS, 0.125));
 
 			const vec4 selection_color = (selection_fill * selection_base.r + selection_border * selection_base.g) * selection_base.a;
 			out_color = mix(figure_color, selection_color, selection_color.a * float(selected));

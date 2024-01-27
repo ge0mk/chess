@@ -141,8 +141,8 @@ class Game {
 public:
 	Game(float width, float height) : width(width), height(height) {
 		field.num_players = 3;
-		initializeNeighborGraph(&field);
-		initializeField(&field);
+		field.initializeNeighborGraph();
+		field.initializeField();
 
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -203,11 +203,11 @@ public:
 	void loadShaders() {
 		field_shader = loadProgram(2,
 	#if defined(SPIRV_SHADERS)
-			GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/piece.vert.spv",
-			GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/piece.frag.spv"
+			GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.vert.spv",
+			GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.frag.spv"
 	#else
-			GL_VERTEX_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/piece.vert",
-			GL_FRAGMENT_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/piece.frag"
+			GL_VERTEX_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.vert",
+			GL_FRAGMENT_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.frag"
 	#endif
 		);
 	}
@@ -476,16 +476,23 @@ public:
 			ImGui::Separator();
 
 			if (ImGui::Button("reset field")) {
-				initializeField(&field);
+				field.initializeField();
 			}
 
 			if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, MAX_PLAYERS)) {
-				initializeNeighborGraph(&field);
-				initializeField(&field);
+				field.initializeNeighborGraph();
+				field.initializeField();
 				updateVertexBufferData();
 			}
 
 			ImGui::SliderInt("player pov", (int*)&field.player_pov, 0, field.num_players - 1);
+
+			if (ImGui::Button("surrender")) {
+				field.players[field.current_player].is_checkmate = true;
+				rotateToNextPlayer();
+			}
+
+			ImGui::Checkbox("mark attackers", &mark_attackers);
 		} ImGui::End();
 	}
 
@@ -554,15 +561,17 @@ public:
 			if (show_promotion_dialog) {
 				promotePawn();
 			} else {
-				const bool is_reachable = field.tiles[field.cursor_id].is_reachable;
+				const MoveType move = field.tiles[field.cursor_id].move;
 				for (uint64_t i = 0; i < field.num_players * 32; i++) {
-					field.tiles[i].is_reachable = 0;
+					field.tiles[i].move = MoveType::None;
 				}
 
-				if (is_reachable) {
-					moveFigure(field.selected_id, field.cursor_id);
+				if (mark_attackers) {
+					field.isTileAttacked(field.cursor_id, field.current_player, true);
+				} else if (move != MoveType::None) {
+					moveFigure(move, field.selected_id, field.cursor_id);
 				} else if (field.tiles[field.cursor_id].player == field.player_pov && field.player_pov == field.current_player) {
-					markReachableNodes(&field, field.cursor_id, field.tiles[field.cursor_id].figure);
+					field.calculateMoves(field.cursor_id, true);
 					field.selected_id = field.cursor_id;
 				}
 			}
@@ -585,13 +594,10 @@ public:
 		viewport_info_uniform_data.scale = std::clamp(viewport_info_uniform_data.scale + event.y * 0.025f, 0.1f, 0.4f);
 	}
 
-	void moveFigure(uint32_t from, uint32_t to) {
-		field.tiles[to].figure = field.tiles[from].figure;
-		field.tiles[to].player = field.tiles[from].player;
-		field.tiles[to].move_count = field.tiles[from].move_count + 1;
-		field.tiles[from].figure = None;
+	void moveFigure(MoveType move, uint32_t from, uint32_t to) {
+		field.moveFigure(move, from, to);
 
-		if (getY(to) == 0 && field.tiles[to].figure == Pawn) {
+		if (getY(to) == 0 && field.tiles[to].figure == Figure::Pawn) {
 			field.selected_id = to;
 			for (int64_t i = 0; i < 4; i++) {
 				field.tiles[32 * MAX_PLAYERS + i].player = field.current_player;
@@ -606,7 +612,7 @@ public:
 			Message msg{
 				.type = Message::Move,
 				.player = field.player_pov,
-				.move = {from, to, FigureType::None},
+				.move = {from, to, move, Figure::None},
 			};
 
 			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
@@ -629,6 +635,7 @@ public:
 				.move = {
 					getId(getX(field.selected_id), getY(field.selected_id) + 1, getZ(field.selected_id)),
 					field.selected_id,
+					MoveType::Move,
 					field.tiles[field.cursor_id].figure
 				},
 			};
@@ -641,11 +648,20 @@ public:
 	}
 
 	void rotateToNextPlayer() {
-		if (isLocalGame()) {
-			field.player_pov = (field.player_pov + 1) % field.num_players;
+		if (!isLocalGame()) {
+			return;
+		}
+
+		do {
 			field.current_player = (field.current_player + 1) % field.num_players;
 			field.cursor_id = (field.cursor_id + 32) % (field.num_players * 32);
-		}
+
+			if (field.isPlayerCheckMate(field.current_player)) {
+				field.players[field.current_player].is_checkmate = true;
+			}
+		} while (field.players[field.current_player].is_checkmate);
+
+		field.player_pov = field.current_player;
 	}
 
 	bool isLocalGame() {
@@ -700,6 +716,7 @@ private:
 	int server_port = 1234;
 
 	bool show_promotion_dialog = false;
+	bool mark_attackers = false;
 
 	SDLNet_StreamSocket *socket;
 

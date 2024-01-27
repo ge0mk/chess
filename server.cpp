@@ -29,8 +29,8 @@ public:
 		}
 		sockets.push_back(server);
 
-		initializeNeighborGraph(&field);
-		initializeField(&field);
+		field.initializeNeighborGraph();
+		field.initializeField();
 	}
 
 	~Server() {
@@ -133,15 +133,10 @@ public:
 					return;
 				}
 
-				field.tiles[msg.move.to].figure = field.tiles[msg.move.from].figure;
-				field.tiles[msg.move.to].player = field.tiles[msg.move.from].player;
-				field.tiles[msg.move.to].move_count = field.tiles[msg.move.from].move_count + 1;
-				field.tiles[msg.move.from].figure = None;
-
-				if (field.tiles[msg.move.to].figure == Pawn && getY(msg.move.to) == 0) {
+				field.moveFigure(msg.move.type, msg.move.from, msg.move.to);
+				if (field.tiles[msg.move.to].figure == Figure::Pawn && getY(msg.move.to) == 0) {
 					field.tiles[msg.move.to].figure = msg.move.promotion;
 				}
-
 				field.current_player = (field.current_player + 1) % field.num_players;
 			} break;
 		}
