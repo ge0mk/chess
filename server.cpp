@@ -18,7 +18,7 @@
 
 class Server {
 public:
-	Server(uint32_t num_players) : field{.num_players = num_players} {
+	Server(uint32_t num_players) : field(num_players) {
 		if (SDLNet_Init() != 0 ) {
 			panic("Failed to initialize SDL_net %s\n", SDL_GetError());
 		}

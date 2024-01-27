@@ -59,6 +59,8 @@ struct Field {
 	uint32_t player_pov;
 	uint32_t current_player;
 
+	inline explicit Field(uint32_t num_players = 2) : num_players(num_players) {}
+
 	void initializeField();
 	void initializeNeighborGraph();
 	void createEdge(uint32_t a, uint32_t b);

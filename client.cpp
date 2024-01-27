@@ -1,3 +1,4 @@
+#include "SDL_video.h"
 #include "chess.h"
 
 #include <algorithm>
@@ -103,8 +104,8 @@ GLuint loadProgram(uint64_t num_shaders, ...) {
 	va_start(ptr, num_shaders);
 	for (uint64_t i = 0; i < num_shaders; i++) {
 		const GLenum type = va_arg(ptr, GLenum);
-		const ShaderFormat format = va_arg(ptr, ShaderFormat);
-		const ShaderSource source = va_arg(ptr, ShaderSource);
+		const ShaderFormat format = static_cast<ShaderFormat>(va_arg(ptr, int));
+		const ShaderSource source = static_cast<ShaderSource>(va_arg(ptr, int));
 		const char *path_or_data = va_arg(ptr, const char*);
 
 		if (source == ShaderSource_File) {
@@ -162,7 +163,7 @@ public:
 		SDL_GL_SetSwapInterval(1);
 		SDL_ShowWindow(window);
 
-		gladLoadGL();
+		gladLoadGLLoader((void*(*)(const char*))SDL_GL_GetProcAddress);
 
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -203,8 +204,8 @@ public:
 	void loadShaders() {
 		field_shader = loadProgram(2,
 	#if defined(SPIRV_SHADERS)
-			GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.vert.spv",
-			GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "build/shaders/field.frag.spv"
+			GL_VERTEX_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "shaders/field.vert.spv",
+			GL_FRAGMENT_SHADER, ShaderFormat_SPIRV, ShaderSource_File, "shaders/field.frag.spv"
 	#else
 			GL_VERTEX_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.vert",
 			GL_FRAGMENT_SHADER, ShaderFormat_GLSL, ShaderSource_File, "shaders/field.frag"
