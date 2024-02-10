@@ -15,7 +15,6 @@ include_directories(SDL_net/include)
 include_directories(SDL_image/include)
 
 if(WIN32)
-    add_compile_options(/W4)
 else()
     add_compile_options(-Wall -Wextra -Werror)
 endif()
@@ -58,7 +57,7 @@ add_executable(client client.cpp chess.cpp glad.c
 )
 
 add_dependencies(client shaders)
-target_link_libraries(client PRIVATE m SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
+target_link_libraries(client PRIVATE SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
 
 add_executable(server server.cpp chess.cpp)
-target_link_libraries(server PRIVATE m SDL3_net::SDL3_net SDL3::SDL3)
+target_link_libraries(server PRIVATE SDL3_net::SDL3_net SDL3::SDL3)
