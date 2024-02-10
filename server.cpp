@@ -11,10 +11,7 @@
 
 #include <SDL3_net/SDL_net.h>
 
-#define panic(format, ...) ({ \
-	fprintf(stderr, format, ##__VA_ARGS__); \
-	abort(); \
-})
+#define panic(format, ...) (fprintf(stderr, format, ##__VA_ARGS__), abort())
 
 class Server {
 public:

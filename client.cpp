@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwchar>
 #include <iostream>
 #include <iterator>
 #include <fstream>
@@ -31,10 +32,7 @@
 
 #define PI 3.141592654f
 
-#define panic(format, ...) ({ \
-	fprintf(stderr, format, ##__VA_ARGS__); \
-	abort(); \
-})
+#define panic(format, ...) (fprintf(stderr, format, ##__VA_ARGS__), abort())
 
 enum ShaderSource {
 	ShaderSource_File,
@@ -50,6 +48,8 @@ struct Vertex {
 	float x, y;
 	float u, v;
 	uint32_t id;
+
+	inline constexpr Vertex(float x, float y, float u, float v, uint32_t id) : x(x), y(y), u(u), v(v), id(id) {}
 };
 
 struct VertexBuffer {
@@ -98,7 +98,7 @@ GLuint loadShader(std::span<uint8_t> source, GLenum type, ShaderFormat format) {
 
 GLuint loadProgram(uint64_t num_shaders, ...) {
 	const GLuint program = glCreateProgram();
-	GLuint shaders[num_shaders];
+	GLuint shaders[10];
 
 	va_list ptr;
 	va_start(ptr, num_shaders);
@@ -295,7 +295,7 @@ public:
 			panic("out of memory\n");
 		}
 
-		for (uint64_t half_segment = 0; half_segment < field.num_players * 2; half_segment++) {
+		for (uint32_t half_segment = 0; half_segment < field.num_players * 2; half_segment++) {
 			const float angle_a = -((half_segment + 0.0f) / (field.num_players * 2.0f) * 2.0f * PI + PI / (1.0f + 1.0f / (field.num_players - 1.0f)));
 			const float angle_b = -((half_segment + 1.0f) / (field.num_players * 2.0f) * 2.0f * PI + PI / (1.0f + 1.0f / (field.num_players - 1.0f)));
 
@@ -327,11 +327,9 @@ public:
 					const float y_center = (y0 + y3) / 2.0f;
 
 					#define addFieldVertex(X, Y, U, V) \
-						vertices[field_mesh.vertex_count++] = (Vertex){ \
-							.x = X, .y = Y, \
-							.u = U, .v = V, \
-							.id = getId(field_x, field_y, field_z) | 0x200, \
-						};
+						vertices[field_mesh.vertex_count++] = Vertex( \
+							X, Y, U, V, getId(field_x, field_y, field_z) | 0x200 \
+						)
 
 					addFieldVertex(x1, y1, 1, 0);
 					addFieldVertex(x0, y0, 0, 0);
@@ -344,11 +342,10 @@ public:
 					#undef addFieldVertex
 
 					#define addPieceVertex(X, Y, U, V) \
-						vertices[field_mesh.vertex_count++] = (Vertex){ \
-							.x = X + (U - 0.5f) / 2, .y = Y + (V - 0.5f) / 2, \
-							.u = U, .v = 1 - V, \
-							.id = getId(field_x, field_y, field_z), \
-						};
+						vertices[field_mesh.vertex_count++] = Vertex( \
+							X + (U - 0.5f) / 2, Y + (V - 0.5f) / 2, U, 1 - V, \
+							getId(field_x, field_y, field_z) \
+						)
 
 					addPieceVertex(x_center, y_center, 1, 0);
 					addPieceVertex(x_center, y_center, 0, 0);
@@ -365,11 +362,11 @@ public:
 
 		for (uint32_t i = 0; i < 4; i++) {
 			#define addVertex(U, V) \
-				vertices[field_mesh.vertex_count++] = (Vertex){ \
-					.x = (float(i) - 1.5f) + (U - 0.5f) / 1.5f, .y = (V - 0.5f) / 1.5f, \
-					.u = U * 1.5f - 0.25f, .v = (1 - V) * 1.5f - 0.25f, \
-					.id = MAX_PLAYERS * 32 + i, \
-				};
+				vertices[field_mesh.vertex_count++] = Vertex( \
+					(float(i) - 1.5f) + (U - 0.5f) / 1.5f, (V - 0.5f) / 1.5f, \
+					U * 1.5f - 0.25f, (1 - V) * 1.5f - 0.25f, \
+					MAX_PLAYERS * 32 + i \
+				)
 
 			addVertex(1, 0);
 			addVertex(0, 0);
@@ -563,7 +560,7 @@ public:
 				promotePawn();
 			} else {
 				const MoveType move = field.tiles[field.cursor_id].move;
-				for (uint64_t i = 0; i < field.num_players * 32; i++) {
+				for (uint32_t i = 0; i < field.num_players * 32; i++) {
 					field.tiles[i].move = MoveType::None;
 				}
 
@@ -610,12 +607,7 @@ public:
 		rotateToNextPlayer();
 
 		if (socket) {
-			Message msg{
-				.type = Message::Move,
-				.player = field.player_pov,
-				.move = {from, to, move, Figure::None},
-			};
-
+			Message msg = Message::makeMove(field.player_pov, from, to, move, Figure::None);
 			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
 				SDLNet_DestroyStreamSocket(socket);
 				socket = NULL;
@@ -669,7 +661,7 @@ public:
 		return socket == NULL;
 	}
 
-	uint64_t getTileUnderCursor(float x, float y) {
+	uint32_t getTileUnderCursor(float x, float y) {
 		if (show_promotion_dialog) {
 			return MAX_PLAYERS * 32 + std::clamp(int(x / viewport_info_uniform_data.scale + 2), 0, 3);
 		}
@@ -694,7 +686,7 @@ public:
 		const float b = (y * x1 - x * y1) / (y2 * x1 - x2 * y1);
 		const float a = fabsf(x1) < 0.01 ? (y - b * y2) / y1 : (x - b * x2) / x1;
 
-		uint64_t tile_x, tile_y;
+		uint32_t tile_x, tile_y;
 		if (half_segment % 2) {
 			tile_x = std::clamp(3 - std::floor(b), 0.0f, 7.0f);
 			tile_y = 3 - std::clamp(std::floor(a), 0.0f, 3.0f);

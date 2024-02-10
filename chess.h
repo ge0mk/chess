@@ -5,9 +5,6 @@
 #define getY(id) (((id)>>3) & 0b00000011)
 #define getXY(id) ((id) & 0b00011111)
 #define getZ(id) ((id)>>5)
-#define packIdAndDirection(id, direction) (((id)<<2) | (direction))
-#define extractId(v) ((v)>>2)
-#define extractDirection(v) ((v) & 0b00000011)
 
 #define MAX_PLAYERS 8
 
@@ -49,8 +46,16 @@ struct PlayerData {
 	uint32_t king_position;
 };
 
+struct IdAndDirection {
+	uint32_t id: 30;
+	uint32_t direction: 2;
+
+	inline constexpr IdAndDirection() : id(UINT32_MAX>>2), direction(0) {}
+	inline constexpr IdAndDirection(uint32_t id, uint32_t direction) : id(id), direction(direction) {}
+};
+
 struct Field {
-	uint32_t neighbors[32 * MAX_PLAYERS][4];
+	IdAndDirection neighbors[32 * MAX_PLAYERS][4];
 	PlayerData players[MAX_PLAYERS];
 	Tile tiles[32 * MAX_PLAYERS + 4];
 	uint32_t cursor_id;
@@ -78,79 +83,75 @@ struct Field {
 
 		#define isValidId(id) (id < num_players * 32)
 
-		#define forward(pos) ({ \
-			const uint64_t _pos = pos; \
-			isValidId(extractId(_pos)) ? neighbors[extractId(_pos)][extractDirection(_pos)] : _pos; \
-		})
+		const auto move = [&](IdAndDirection pos, uint32_t rot) -> IdAndDirection {
+			if (!isValidId(pos.id)) {
+				return pos;
+			}
 
-		#define right(pos) ({ \
-			const uint64_t _pos = pos; \
-			isValidId(extractId(_pos)) ? neighbors[extractId(_pos)][(extractDirection(_pos) + 1) % 4] : _pos; \
-		})
+			return neighbors[pos.id][(pos.direction + rot) % 4];
+		};
 
-		#define left(pos) ({ \
-			const uint64_t _pos = pos; \
-			isValidId(extractId(_pos)) ? neighbors[extractId(_pos)][(extractDirection(_pos) + 3) % 4] : _pos; \
-		})
-
+		#define forward(pos) move(pos, 0)
+		#define right(pos) move(pos, 1)
+		#define left(pos) move(pos, 3)
 		#define diagonalRight(pos) left(right(pos))
 		#define diagonalLeft(pos) right(left(pos))
 
 		if (figure == Figure::Pawn || figure == Figure::Any) {
-			uint64_t current = forward(packIdAndDirection(start, is_on_opposing_half ? South : North));
-			if (isValidId(extractId(current)) && tiles[extractId(current)].figure == Figure::None) {
-				visitor(extractId(current), Figure::Pawn);
+			IdAndDirection current = forward(IdAndDirection(start, is_on_opposing_half ? South : North));
+			if (isValidId(current.id) && tiles[current.id].figure == Figure::None) {
+				visitor(current.id, Figure::Pawn);
 			}
 
-			uint64_t left = left(current);
-			if (isValidId(extractId(left)) && tiles[extractId(left)].figure != Figure::None) {
-				visitor(extractId(left), Figure::Pawn);
+			IdAndDirection left = left(current);
+			if (isValidId(left.id) && tiles[left.id].figure != Figure::None) {
+				visitor(left.id, Figure::Pawn);
 			}
 
-			left = diagonalLeft(packIdAndDirection(start, is_on_opposing_half ? South : North));
-			if (isValidId(extractId(left)) && tiles[extractId(left)].figure != Figure::None) {
-				visitor(extractId(left), Figure::Pawn);
+			left = diagonalLeft(IdAndDirection(start, is_on_opposing_half ? South : North));
+			if (isValidId(left.id) && tiles[left.id].figure != Figure::None) {
+				visitor(left.id, Figure::Pawn);
 			}
 
-			uint64_t right = right(current);
-			if (isValidId(extractId(right)) && tiles[extractId(right)].figure != Figure::None) {
-				visitor(extractId(right), Figure::Pawn);
+			IdAndDirection right = right(current);
+			if (isValidId(right.id) && tiles[right.id].figure != Figure::None) {
+				visitor(right.id, Figure::Pawn);
 			}
 
-			right = diagonalRight(packIdAndDirection(start, is_on_opposing_half ? South : North));
-			if (isValidId(extractId(right)) && tiles[extractId(right)].figure != Figure::None) {
-				visitor(extractId(right), Figure::Pawn);
+			right = diagonalRight(IdAndDirection(start, is_on_opposing_half ? South : North));
+			if (isValidId(right.id) && tiles[right.id].figure != Figure::None) {
+				visitor(right.id, Figure::Pawn);
 			}
 
-			if (tiles[start].move_count == 0 && isValidId(extractId(current)) && tiles[extractId(current)].figure == Figure::None) {
+			if (tiles[start].move_count == 0 && isValidId(current.id) && tiles[current.id].figure == Figure::None) {
 				current = forward(current);
-				if (isValidId(extractId(current)) && tiles[extractId(current)].figure == Figure::None) {
-					visitor(extractId(current), Figure::Pawn);
+				if (isValidId(current.id) && tiles[current.id].figure == Figure::None) {
+					visitor(current.id, Figure::Pawn);
 				}
 			}
 		}
 
 		if (figure == Figure::Bishop || figure == Figure::Queen || figure == Figure::Any) {
-			for (uint64_t d = North; d <= West; d++) {
-				uint64_t current = diagonalRight(packIdAndDirection(start, d));
-				for (uint64_t i = 0; i < 8; i++) {
-					if (!isValidId(extractId(current))) {
+			for (uint32_t d = North; d <= West; d++) {
+				IdAndDirection current = diagonalRight(IdAndDirection(start, d));
+				for (uint32_t i = 0; i < 8; i++) {
+					if (!isValidId(current.id)) {
 						break;
 					}
-					visitor(extractId(current), Figure::Bishop);
-					if (tiles[extractId(current)].figure != Figure::None) {
+					visitor(current.id, Figure::Bishop);
+					if (tiles[current.id].figure != Figure::None) {
 						break;
 					}
 					current = diagonalRight(current);
 				}
 
-				current = diagonalLeft(packIdAndDirection(start, d));
-				for (uint64_t i = 0; i < 8; i++) {
-					if (!isValidId(extractId(current))) {
+				current = diagonalLeft(IdAndDirection(start, d));
+				for (uint32_t i = 0; i < 8; i++) {
+					if (!isValidId(current.id)) {
 						break;
 					}
-					visitor(extractId(current), Figure::Bishop);
-					if (tiles[extractId(current)].figure != Figure::None) {
+					visitor(current.id, Figure::Bishop);
+					if (tiles[current.id].figure != Figure::None) {
 						break;
 					}
 					current = diagonalLeft(current);
@@ -159,29 +160,29 @@ struct Field {
 		}
 
 		if (figure == Figure::Knight || figure == Figure::Any) {
-			for (uint64_t d = North; d <= West; d++) {
-				const uint64_t current = packIdAndDirection(start, d);
+			for (uint32_t d = North; d <= West; d++) {
+				const IdAndDirection current = IdAndDirection(start, d);
 
-				uint64_t tmp = extractId(right(forward(forward(current))));
+				uint32_t tmp = right(forward(forward(current))).id;
 				if (isValidId(tmp)) { visitor(tmp, Figure::Knight); }
 
-				tmp = extractId(left(forward(forward(current))));
+				tmp = left(forward(forward(current))).id;
 				if (isValidId(tmp)) { visitor(tmp, Figure::Knight); }
 
-				tmp = extractId(forward(right(forward(current))));
+				tmp = forward(right(forward(current))).id;
 				if (isValidId(tmp)) { visitor(tmp, Figure::Knight); }
 
-				tmp = extractId(forward(left(forward(current))));
+				tmp = forward(left(forward(current))).id;
 				if (isValidId(tmp)) { visitor(tmp, Figure::Knight); }
 			}
 		}
 
 		if (figure == Figure::Rook || figure == Figure::Queen || figure == Figure::Any) {
-			for (uint64_t d = North; d <= West; d++) {
-				uint64_t current = forward(packIdAndDirection(start, d));
-				while (isValidId(extractId(current))) {
-					visitor(extractId(current), Figure::Rook);
-					if (tiles[extractId(current)].figure != Figure::None) {
+			for (uint32_t d = North; d <= West; d++) {
+				IdAndDirection current = forward(IdAndDirection(start, d));
+				while (isValidId(current.id)) {
+					visitor(current.id, Figure::Rook);
+					if (tiles[current.id].figure != Figure::None) {
 						break;
 					}
 					current = forward(current);
@@ -190,18 +191,18 @@ struct Field {
 		}
 
 		if (figure == Figure::King) {
-			for (uint64_t d = North; d <= West; d++) {
-				const uint64_t current = forward(packIdAndDirection(start, d));
-				if (!isValidId(extractId(current))) {
+			for (uint32_t d = North; d <= West; d++) {
+				const IdAndDirection current = forward(IdAndDirection(start, d));
+				if (!isValidId(current.id)) {
 					continue;
 				}
 
-				visitor(extractId(current), Figure::King);
+				visitor(current.id, Figure::King);
 
-				const uint32_t r = extractId(right(current));
+				const uint32_t r = right(current).id;
 				if (isValidId(r)) { visitor(r, Figure::King); }
 
-				const uint32_t l = extractId(left(current));
+				const uint32_t l = left(current).id;
 				if (isValidId(l)) { visitor(l, Figure::King); }
 			}
 		}
@@ -246,4 +247,15 @@ struct Message {
 			Figure promotion;
 		} move;
 	};
+
+	static inline constexpr Message makeMove(uint32_t player, uint32_t from, uint32_t to, MoveType type, Figure promotion) {
+		Message msg;
+		msg.type = Move;
+		msg.player = player;
+		msg.move.from = from;
+		msg.move.to = to;
+		msg.move.type = type;
+		msg.move.promotion = promotion;
+		return msg;
+	}
 };

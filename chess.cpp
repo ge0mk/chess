@@ -6,7 +6,7 @@ void Field::initializeField() {
 	player_pov = 0;
 	current_player = 0;
 
-	for (uint64_t id = 0; id < MAX_PLAYERS * 32 + 4; id++) {
+	for (uint32_t id = 0; id < MAX_PLAYERS * 32 + 4; id++) {
 		tiles[id] = { Figure::None, 0, MoveType::None, 0 };
 	}
 
@@ -15,8 +15,8 @@ void Field::initializeField() {
 	tiles[32 * MAX_PLAYERS + 2].figure = Figure::Rook;
 	tiles[32 * MAX_PLAYERS + 3].figure = Figure::Queen;
 
-	for (uint64_t z = 0; z < num_players; z++) {
-		for (uint64_t x = 0; x < 8; x++) {
+	for (uint32_t z = 0; z < num_players; z++) {
+		for (uint32_t x = 0; x < 8; x++) {
 			tiles[getId(x, 1, z)].figure = Figure::Pawn;
 			tiles[getId(x, 1, z)].player = z;
 			tiles[getId(x, 0, z)].player = z;
@@ -37,29 +37,29 @@ void Field::initializeField() {
 }
 
 void Field::initializeNeighborGraph() {
-	for (uint64_t id = 0; id < num_players * 32; id++) {
-		for (uint64_t dir = North; dir <= West; dir++) {
-			neighbors[id][dir] = UINT32_MAX;
+	for (uint32_t id = 0; id < num_players * 32; id++) {
+		for (uint32_t dir = North; dir <= West; dir++) {
+			neighbors[id][dir] = IdAndDirection();
 		}
 	}
 
-	for (uint64_t z = 0; z < num_players; z++) {
-		for (uint64_t y = 0; y < 3; y++) {
-			for (uint64_t x = 0; x < 7; x++) {
+	for (uint32_t z = 0; z < num_players; z++) {
+		for (uint32_t y = 0; y < 3; y++) {
+			for (uint32_t x = 0; x < 7; x++) {
 				createEdge(getId(x, y, z), getId(x + 1, y, z));
 				createEdge(getId(x, y, z), getId(x, y + 1, z));
 			}
 		}
 
-		for (uint64_t x = 0; x < 7; x++) {
+		for (uint32_t x = 0; x < 7; x++) {
 			createEdge(getId(x, 3, z), getId(x + 1, 3, z));
 		}
 
-		for (uint64_t y = 0; y < 3; y++) {
+		for (uint32_t y = 0; y < 3; y++) {
 			createEdge(getId(7, y, z), getId(7, y + 1, z));
 		}
 
-		for (uint64_t x = 0; x < 4; x++) {
+		for (uint32_t x = 0; x < 4; x++) {
 			createEdge(getId(x, 3, z), getId(7 - x, 3, (z + 1) % num_players));
 		}
 	}
@@ -67,14 +67,14 @@ void Field::initializeNeighborGraph() {
 
 void Field::createEdge(uint32_t a, uint32_t b) {
 	if (getZ(a) != getZ(b)) {
-		neighbors[a][North] = packIdAndDirection(b, South);
-		neighbors[b][North] = packIdAndDirection(a, South);
+		neighbors[a][North] = IdAndDirection(b, South);
+		neighbors[b][North] = IdAndDirection(a, South);
 	} else if (getX(a) < getX(b)) {
-		neighbors[a][West] = packIdAndDirection(b, West);
-		neighbors[b][East] = packIdAndDirection(a, East);
+		neighbors[a][West] = IdAndDirection(b, West);
+		neighbors[b][East] = IdAndDirection(a, East);
 	} else {// (getY(a) < getY(b)) {
-		neighbors[a][North] = packIdAndDirection(b, North);
-		neighbors[b][South] = packIdAndDirection(a, South);
+		neighbors[a][North] = IdAndDirection(b, North);
+		neighbors[b][South] = IdAndDirection(a, South);
 	}
 }
 
