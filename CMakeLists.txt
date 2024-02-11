@@ -4,6 +4,7 @@ project(chess)
 
 set(CMAKE_C_STANDARD 23)
 set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_INSTALL_RPATH "$ORIGIN/../lib/")
 
 add_subdirectory(SDL)
 add_subdirectory(SDL_net)
@@ -14,15 +15,14 @@ include_directories(SDL/include)
 include_directories(SDL_net/include)
 include_directories(SDL_image/include)
 
-if(WIN32)
-else()
+if(UNIX)
     add_compile_options(-Wall -Wextra -Werror)
 endif()
 
 if(SPIRV_SHADERS)
     add_compile_options(-DSPIRV_SHADERS)
 
-    if (WIN32)
+    if(WIN32)
         set(GLSL_VALIDATOR "$ENV{VULKAN_SDK}/Bin/glslangValidator.exe")
     else()
         set(GLSL_VALIDATOR "glslangValidator")
@@ -42,8 +42,10 @@ if(SPIRV_SHADERS)
     endforeach(GLSL_FILE)
 
     add_custom_target(shaders DEPENDS ${SPIRV_BINARY_FILES})
+    set(SHADER_FILES ${SPIRV_BINARY_FILES})
 else()
     add_custom_target(shaders)
+    file(GLOB_RECURSE SHADER_FILES "shaders/*")
 endif()
 
 add_executable(client client.cpp chess.cpp glad.c
@@ -55,9 +57,12 @@ add_executable(client client.cpp chess.cpp glad.c
     imgui/backends/imgui_impl_opengl3.cpp
     imgui/backends/imgui_impl_sdl3.cpp
 )
-
+target_link_libraries(client SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
 add_dependencies(client shaders)
-target_link_libraries(client PRIVATE SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
 
 add_executable(server server.cpp chess.cpp)
-target_link_libraries(server PRIVATE SDL3_net::SDL3_net SDL3::SDL3)
+target_link_libraries(server SDL3_net::SDL3_net SDL3::SDL3)
+
+install(TARGETS SDL3-shared SDL3_image-shared SDL3_net-shared client server)
+install(FILES ${SHADER_FILES} DESTINATION shaders)
+install(FILES palette.png spritesheet.png DESTINATION .)

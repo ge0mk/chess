@@ -21,27 +21,16 @@ jobs:
         submodules: true
 
     - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -DSDL3IMAGE_VENDORED=OFF
+      run: cmake -B ${{github.workspace}}/build -DSDL3IMAGE_VENDORED=OFF -DCMAKE_INSTALL_PREFIX=${{github.workspace}}/artifacts
 
     - name: Build
-      run: |
-        cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
-        cp ${{github.workspace}}\build\Release\client.exe ${{github.workspace}}
-        cp ${{github.workspace}}\build\Release\server.exe ${{github.workspace}}
-        cp ${{github.workspace}}\build\SDL\Release\SDL3.dll ${{github.workspace}}
-        cp ${{github.workspace}}\build\SDL_image\Release\SDL3_image.dll ${{github.workspace}}
-        cp ${{github.workspace}}\build\SDL_net\Release\SDL3_net.dll ${{github.workspace}}
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Install
+      run: cmake --install ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
 
     - name: Upload Artifact
       uses: actions/upload-artifact@v4
       with:
-        name: bin
-        path: |
-          client.exe
-          server.exe
-          SDL3.dll
-          SDL3_image.dll
-          SDL3_net.dll
-          shaders
-          palette.png
-          spritesheet.png
+        name: artifacts
+        path: artifacts
