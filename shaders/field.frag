@@ -26,6 +26,11 @@ layout (binding = 1, std140) uniform Field {
 	int num_players;
 	int selected_id;
 	int player_offset;
+	int current_player;
+};
+
+layout (binding = 2, std140) uniform Time {
+	float time;
 };
 
 layout (binding = 0) uniform sampler2D palette;
@@ -38,8 +43,9 @@ void main() {
 	const vec2 uv2 = abs(uv - 0.5);
 
 	if ((id & 0x200) != 0) {
-		const vec4 border_color = texture(palette, vec2(float(z) / MAX_PLAYERS, 0.875));
 		const vec4 tile_color = texture(palette, vec2(float(parity) / MAX_PLAYERS, 0.125));
+		vec4 border_color = texture(palette, vec2(float(z) / MAX_PLAYERS, 0.875));
+		border_color = mix(border_color, vec4(0, 1, 0, 1), float(current_player == z) * abs(cos(time)));
 		out_color = mix(tile_color, border_color, smoothstep(0.475, 0.48, max(uv2.x, uv2.y)));
 	} else {
 		const int id2 = id >= 32 * MAX_PLAYERS ? id : (id + (player_offset<<5)) % (num_players<<5);

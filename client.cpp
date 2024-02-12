@@ -224,6 +224,10 @@ public:
 		glGenBuffers(1, &field_uniform_buffer);
 		glBindBuffer(GL_UNIFORM_BUFFER, field_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 5, &field.tiles, GL_DYNAMIC_DRAW);
+
+		glGenBuffers(1, &time_uniform_buffer);
+		glBindBuffer(GL_UNIFORM_BUFFER, time_uniform_buffer);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(float), NULL, GL_DYNAMIC_DRAW);
 	}
 
 	void loadTextures() {
@@ -429,6 +433,10 @@ public:
 		glBindBuffer(GL_UNIFORM_BUFFER, field_uniform_buffer);
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 5, &field.tiles, GL_DYNAMIC_DRAW);
 
+		float time = float(SDL_GetTicks()) / 1000.0f;
+		glBindBuffer(GL_UNIFORM_BUFFER, time_uniform_buffer);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(float), &time, GL_DYNAMIC_DRAW);
+
 		glUseProgram(field_shader);
 
 		glActiveTexture(GL_TEXTURE0);
@@ -441,6 +449,7 @@ public:
 
 		glBindBufferBase(GL_UNIFORM_BUFFER, 0, viewport_info_uniform_buffer);
 		glBindBufferBase(GL_UNIFORM_BUFFER, 1, field_uniform_buffer);
+		glBindBufferBase(GL_UNIFORM_BUFFER, 2, time_uniform_buffer);
 
 		glBindVertexArray(field_mesh.vao);
 
@@ -742,7 +751,7 @@ private:
 	GLuint viewport_info_uniform_buffer;
 	ViewportInfoUniformData viewport_info_uniform_data;
 
-	GLuint field_uniform_buffer;
+	GLuint field_uniform_buffer, time_uniform_buffer;
 
 	Field field;
 };
