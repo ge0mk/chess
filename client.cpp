@@ -475,25 +475,29 @@ public:
 				}
 			}
 
+#ifndef NDEBUG
 			ImGui::Separator();
-
 			ImGui::Text("resolution: %f, %f", width, height);
 			ImGui::SliderFloat("scale", &viewport_info_uniform_data.scale, 0.1f, 0.4f);
 			ImGui::SliderFloat2("offset", &viewport_info_uniform_data.x_offset, -1.0f, 1.0f);
+#endif
 
+			if (!socket) {
+				ImGui::Separator();
+
+				if (ImGui::Button("reset field")) {
+					field.initializeField();
+				}
+
+				if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, MAX_PLAYERS)) {
+					field.initializeNeighborGraph();
+					field.initializeField();
+					updateVertexBufferData();
+				}
+			}
+
+#ifndef NDEBUG
 			ImGui::Separator();
-
-			if (ImGui::Button("reset field")) {
-				field.initializeField();
-			}
-
-			if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, MAX_PLAYERS)) {
-				field.initializeNeighborGraph();
-				field.initializeField();
-				updateVertexBufferData();
-			}
-
-			ImGui::SliderInt("player pov", (int*)&field.player_pov, 0, field.num_players - 1);
 
 			if (ImGui::Button("surrender")) {
 				field.players[field.current_player].is_checkmate = true;
@@ -501,6 +505,7 @@ public:
 			}
 
 			ImGui::Checkbox("mark attackers", &mark_attackers);
+#endif
 		} ImGui::End();
 	}
 
