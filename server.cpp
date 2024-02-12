@@ -63,21 +63,10 @@ public:
 					continue;
 				}
 
-				if (received < 0) {
+				if (received != sizeof(Message)) {
 					printf("error while receiving from client (1): %s\n", SDL_GetError());
 					disconnectClient(i);
 					continue;
-				}
-
-				while (received < (int)sizeof(Message)) {
-					SDLNet_WaitUntilInputAvailable((void**)&clients[i], 1, -1);
-					const int segment = SDLNet_ReadFromStreamSocket(clients[i], ((char*)&msg) + received, sizeof(Message) - received);
-					if (segment <= 0) {
-						printf("error while receiving from client (2): %s\n", SDL_GetError());
-						disconnectClient(i);
-						break;
-					}
-					received += segment;
 				}
 
 				handleMessage(i, msg);
@@ -124,27 +113,43 @@ public:
 
 	void handleMessage(uint32_t sender, Message msg) {
 		switch (msg.type) {
-			case Message::None: {} break;
 			case Message::Move: {
 				if (sender != field.current_player) {
 					return;
 				}
 
 				field.moveFigure(msg.move.type, msg.move.from, msg.move.to);
-				if (field.tiles[msg.move.to].figure == Figure::Pawn && getY(msg.move.to) == 0) {
-					field.tiles[msg.move.to].figure = msg.move.promotion;
-				}
-				field.current_player = (field.current_player + 1) % field.num_players;
-			} break;
-		}
 
+				if (field.tiles[msg.move.to].figure != Figure::Pawn || getY(msg.move.to) != 0) {
+					field.current_player = (field.current_player + 1) % field.num_players;
+					msg.next_player = field.current_player;
+				}
+
+				sendMessageToAllClients(msg);
+			} break;
+			case Message::Promotion: {
+				if (sender != field.current_player) {
+					return;
+				}
+
+				if (field.tiles[msg.promotion.id].figure == Figure::Pawn && getY(msg.promotion.id) == 0) {
+					field.tiles[msg.promotion.id].figure = msg.promotion.figure;
+				}
+
+				field.current_player = (field.current_player + 1) % field.num_players;
+				msg.next_player = field.current_player;
+				sendMessageToAllClients(msg);
+			}
+		}
+	}
+
+	void sendMessageToAllClients(Message msg) {
 		for (size_t i = 0; i < clients.size(); i++) {
 			if (!clients[i]) {
 				continue;
 			}
 
-			field.player_pov = i;
-			if (SDLNet_WriteToStreamSocket(clients[i], &field, sizeof(Field)) != 0) {
+			if (SDLNet_WriteToStreamSocket(clients[i], &msg, sizeof(Message)) != 0) {
 				printf("error while sending to clients: %s\n", SDL_GetError());
 				disconnectClient(i);
 			}

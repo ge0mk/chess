@@ -233,29 +233,43 @@ struct Field {
 
 struct Message {
 	enum : uint32_t {
-		None,
 		Move,
+		Promotion,
 	} type;
 
 	uint32_t player;
+	uint32_t next_player;
+
 	union {
 		struct {} none;
 
 		struct {
 			uint32_t from, to;
 			MoveType type;
-			Figure promotion;
 		} move;
+
+		struct {
+			uint32_t id;
+			Figure figure;
+		} promotion;
 	};
 
-	static inline constexpr Message makeMove(uint32_t player, uint32_t from, uint32_t to, MoveType type, Figure promotion) {
+	static inline constexpr Message makeMove(uint32_t player, uint32_t from, uint32_t to, MoveType type) {
 		Message msg;
 		msg.type = Move;
 		msg.player = player;
 		msg.move.from = from;
 		msg.move.to = to;
 		msg.move.type = type;
-		msg.move.promotion = promotion;
+		return msg;
+	}
+
+	static inline constexpr Message makePromotion(uint32_t player, uint32_t id, Figure figure) {
+		Message msg;
+		msg.type = Promotion;
+		msg.player = player;
+		msg.promotion.id = id;
+		msg.promotion.figure = figure;
 		return msg;
 	}
 };

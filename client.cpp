@@ -1,3 +1,4 @@
+#include "SDL_oldnames.h"
 #include "SDL_video.h"
 #include "chess.h"
 
@@ -222,7 +223,7 @@ public:
 
 		glGenBuffers(1, &field_uniform_buffer);
 		glBindBuffer(GL_UNIFORM_BUFFER, field_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(field.cursor_id), &field.tiles, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 5, &field.tiles, GL_DYNAMIC_DRAW);
 	}
 
 	void loadTextures() {
@@ -387,7 +388,7 @@ public:
 	void run() {
 		while (!quit) {
 			handleEvents();
-			receiveFromServer();
+			receiveMessageFromServer();
 
 			glClear(GL_COLOR_BUFFER_BIT);
 
@@ -426,7 +427,7 @@ public:
 		glBufferData(GL_UNIFORM_BUFFER, sizeof(ViewportInfoUniformData), &viewport_info_uniform_data, GL_DYNAMIC_DRAW);
 
 		glBindBuffer(GL_UNIFORM_BUFFER, field_uniform_buffer);
-		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 4, &field.tiles, GL_DYNAMIC_DRAW);
+		glBufferData(GL_UNIFORM_BUFFER, sizeof(field.tiles) + sizeof(uint32_t) * 5, &field.tiles, GL_DYNAMIC_DRAW);
 
 		glUseProgram(field_shader);
 
@@ -494,7 +495,7 @@ public:
 		} ImGui::End();
 	}
 
-	void receiveFromServer() {
+	void receiveFieldFromServer() {
 		if (!socket) {
 			return;
 		}
@@ -515,6 +516,36 @@ public:
 		}
 	}
 
+	void receiveMessageFromServer() {
+		if (!socket) {
+			return;
+		}
+
+		Message msg;
+		int received = SDLNet_ReadFromStreamSocket(socket, &msg, sizeof(Message));
+		if (received == 0) {
+			return;
+		}
+
+		if (received != sizeof(Message)) {
+			disconnectFromServer();
+		}
+
+		switch (msg.type) {
+			case Message::Move: {
+				field.current_player = msg.next_player;
+				if (msg.player == field.player_pov) {
+					break;
+				}
+				field.moveFigure(msg.move.type, msg.move.from, msg.move.to);
+			} break;
+			case Message::Promotion: {
+				field.current_player = msg.next_player;
+				field.tiles[msg.promotion.id].figure = msg.promotion.figure;
+			}
+		}
+	}
+
 	void connectToServer(const std::string &address, uint16_t port) {
 		SDLNet_Address *addr = SDLNet_ResolveHostname(address.c_str());
 		SDLNet_WaitUntilResolved(addr, -1);
@@ -527,7 +558,7 @@ public:
 		}
 
 		SDLNet_WaitUntilInputAvailable((void**)&socket, 1, -1);
-		receiveFromServer();
+		receiveFieldFromServer();
 
 		if (field.num_players > MAX_PLAYERS) {
 			panic("received invalid field from server\n");
@@ -544,6 +575,7 @@ public:
 		printf("connection to server (%s) lost\n", SDLNet_GetAddressString(SDLNet_GetStreamSocketAddress(socket)));
 		SDLNet_DestroyStreamSocket(socket);
 		socket = NULL;
+		abort();
 	}
 
 	void onFramebufferResized(SDL_WindowEvent event) {
@@ -595,6 +627,14 @@ public:
 	void moveFigure(MoveType move, uint32_t from, uint32_t to) {
 		field.moveFigure(move, from, to);
 
+		if (socket) {
+			Message msg = Message::makeMove(field.player_pov, from, to, move);
+			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
+				SDLNet_DestroyStreamSocket(socket);
+				socket = NULL;
+			}
+		}
+
 		if (getY(to) == 0 && field.tiles[to].figure == Figure::Pawn) {
 			field.selected_id = to;
 			for (int64_t i = 0; i < 4; i++) {
@@ -605,14 +645,6 @@ public:
 		}
 
 		rotateToNextPlayer();
-
-		if (socket) {
-			Message msg = Message::makeMove(field.player_pov, from, to, move, Figure::None);
-			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
-				SDLNet_DestroyStreamSocket(socket);
-				socket = NULL;
-			}
-		}
 	}
 
 	void promotePawn() {
@@ -622,17 +654,7 @@ public:
 		rotateToNextPlayer();
 
 		if (socket) {
-			Message msg{
-				.type = Message::Move,
-				.player = field.player_pov,
-				.move = {
-					getId(getX(field.selected_id), getY(field.selected_id) + 1, getZ(field.selected_id)),
-					field.selected_id,
-					MoveType::Move,
-					field.tiles[field.cursor_id].figure
-				},
-			};
-
+			Message msg = Message::makePromotion(field.player_pov, field.selected_id, field.tiles[field.cursor_id].figure);
 			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
 				SDLNet_DestroyStreamSocket(socket);
 				socket = NULL;
