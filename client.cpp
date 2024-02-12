@@ -1,5 +1,3 @@
-#include "SDL_oldnames.h"
-#include "SDL_video.h"
 #include "chess.h"
 
 #include <algorithm>
@@ -11,9 +9,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <cwchar>
+#include <format>
+#include <fstream>
 #include <iostream>
 #include <iterator>
-#include <fstream>
 #include <span>
 #include <string>
 #include <vector>
@@ -471,6 +470,7 @@ public:
 				}
 			} else {
 				if (ImGui::Button("connect")) {
+					game_log.clear();
 					connectToServer(server_address, server_port);
 				}
 			}
@@ -487,12 +487,14 @@ public:
 
 				if (ImGui::Button("reset field")) {
 					field.initializeField();
+					game_log.clear();
 				}
 
 				if (ImGui::SliderInt("num players", (int*)&field.num_players, 2, MAX_PLAYERS)) {
 					field.initializeNeighborGraph();
 					field.initializeField();
 					updateVertexBufferData();
+					game_log.clear();
 				}
 			}
 
@@ -501,16 +503,25 @@ public:
 
 			if (ImGui::Button("surrender")) {
 				field.players[field.current_player].is_checkmate = true;
-				rotateToNextPlayer();
+				switchToNextPlayer();
 			}
 
 			ImGui::Checkbox("mark attackers", &mark_attackers);
 #endif
+			ImGui::Separator();
+			if (ImGui::BeginChild("log")) {
+				ImGui::TextUnformatted(game_log.data(), game_log.data() + game_log.size());
+				if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+					ImGui::SetScrollHereY(1.0f);
+				}
+			}
+			ImGui::EndChild();
+
 		} ImGui::End();
 	}
 
 	void receiveFieldFromServer() {
-		if (!socket) {
+		if (isLocalGame()) {
 			return;
 		}
 
@@ -531,7 +542,7 @@ public:
 	}
 
 	void receiveMessageFromServer() {
-		if (!socket) {
+		if (isLocalGame()) {
 			return;
 		}
 
@@ -548,14 +559,13 @@ public:
 		switch (msg.type) {
 			case Message::Move: {
 				field.current_player = msg.next_player;
-				if (msg.player == field.player_pov) {
-					break;
-				}
 				field.moveFigure(msg.move.type, msg.move.from, msg.move.to);
+				onFigureMoved(msg.player, msg.move.from, msg.move.to, msg.move.type);
 			} break;
 			case Message::Promotion: {
 				field.current_player = msg.next_player;
 				field.tiles[msg.promotion.id].figure = msg.promotion.figure;
+				onFigurePromoted(msg.player, msg.promotion.id, msg.promotion.figure);
 			}
 		}
 	}
@@ -566,7 +576,7 @@ public:
 		socket = SDLNet_CreateClient(addr, port);
 
 		if (SDLNet_WaitUntilConnected(socket, -1) != 1) {
-			printf("couldn't connect to server (%s)\n", SDLNet_GetAddressString(addr));
+			game_log += std::format("Couldn't connect to server ({})\n", SDLNet_GetAddressString(addr));
 			socket = NULL;
 			return;
 		}
@@ -575,10 +585,13 @@ public:
 		receiveFieldFromServer();
 
 		if (field.num_players > MAX_PLAYERS) {
-			panic("received invalid field from server\n");
+			game_log += std::format("Received invalid field from server - disconnecting\n");
+			disconnectFromServer();
+			field.num_players = 2;
+			field.initializeField();
+		} else {
+			game_log += std::format("Connected to server ({}), {} players, you're player {}\n", SDLNet_GetAddressString(addr), field.num_players, field.player_pov);
 		}
-
-		printf("connected to server (%s), %i players\n", SDLNet_GetAddressString(addr), field.num_players);
 
 		SDLNet_UnrefAddress(addr);
 
@@ -586,10 +599,9 @@ public:
 	}
 
 	void disconnectFromServer() {
-		printf("connection to server (%s) lost\n", SDLNet_GetAddressString(SDLNet_GetStreamSocketAddress(socket)));
 		SDLNet_DestroyStreamSocket(socket);
 		socket = NULL;
-		abort();
+		game_log += std::format("Disconnected from server ({})\n", SDLNet_GetAddressString(SDLNet_GetStreamSocketAddress(socket)));
 	}
 
 	void onFramebufferResized(SDL_WindowEvent event) {
@@ -605,15 +617,15 @@ public:
 			if (show_promotion_dialog) {
 				promotePawn();
 			} else {
-				const MoveType move = field.tiles[field.cursor_id].move;
+				const MoveType type = field.tiles[field.cursor_id].move;
 				for (uint32_t i = 0; i < field.num_players * 32; i++) {
 					field.tiles[i].move = MoveType::None;
 				}
 
 				if (mark_attackers) {
 					field.isTileAttacked(field.cursor_id, field.current_player, true);
-				} else if (move != MoveType::None) {
-					moveFigure(move, field.selected_id, field.cursor_id);
+				} else if (type != MoveType::None) {
+					moveFigure(field.selected_id, field.cursor_id, type);
 				} else if (field.tiles[field.cursor_id].player == field.player_pov && field.player_pov == field.current_player) {
 					field.calculateMoves(field.cursor_id, true);
 					field.selected_id = field.cursor_id;
@@ -638,36 +650,37 @@ public:
 		viewport_info_uniform_data.scale = std::clamp(viewport_info_uniform_data.scale + event.y * 0.025f, 0.1f, 0.4f);
 	}
 
-	void moveFigure(MoveType move, uint32_t from, uint32_t to) {
-		field.moveFigure(move, from, to);
-
-		if (socket) {
-			Message msg = Message::makeMove(field.player_pov, from, to, move);
+	void moveFigure(uint32_t from, uint32_t to, MoveType type) {
+		if (isLocalGame()) {
+			field.moveFigure(type, from, to);
+			onFigureMoved(field.current_player, from, to, type);
+		} else {
+			Message msg = Message::makeMove(field.player_pov, from, to, type);
 			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
 				SDLNet_DestroyStreamSocket(socket);
 				socket = NULL;
 			}
 		}
 
-		if (getY(to) == 0 && field.tiles[to].figure == Figure::Pawn) {
+		if (getY(to) == 0 && field.tiles[from].figure == Figure::Pawn) {
 			field.selected_id = to;
 			for (int64_t i = 0; i < 4; i++) {
 				field.tiles[32 * MAX_PLAYERS + i].player = field.current_player;
 			}
 			show_promotion_dialog = true;
-			return;
+		} else {
+			switchToNextPlayer();
 		}
-
-		rotateToNextPlayer();
 	}
 
 	void promotePawn() {
-		field.tiles[field.selected_id].figure = field.tiles[field.cursor_id].figure;
 		show_promotion_dialog = false;
 
-		rotateToNextPlayer();
-
-		if (socket) {
+		if (isLocalGame()) {
+			field.tiles[field.selected_id].figure = field.tiles[field.cursor_id].figure;
+			onFigurePromoted(field.player_pov, field.selected_id, field.tiles[field.cursor_id].figure);
+			switchToNextPlayer();
+		} else {
 			Message msg = Message::makePromotion(field.player_pov, field.selected_id, field.tiles[field.cursor_id].figure);
 			if (SDLNet_WriteToStreamSocket(socket, &msg, sizeof(Message)) != 0) {
 				SDLNet_DestroyStreamSocket(socket);
@@ -676,25 +689,21 @@ public:
 		}
 	}
 
-	void rotateToNextPlayer() {
-		if (!isLocalGame()) {
+	void switchToNextPlayer() {
+		if (isNetworkGame()) {
 			return;
 		}
 
-		do {
-			field.current_player = (field.current_player + 1) % field.num_players;
-			field.cursor_id = (field.cursor_id + 32) % (field.num_players * 32);
-
-			if (field.isPlayerCheckMate(field.current_player)) {
-				field.players[field.current_player].is_checkmate = true;
-			}
-		} while (field.players[field.current_player].is_checkmate);
-
+		field.switchToNextPlayer();
 		field.player_pov = field.current_player;
 	}
 
 	bool isLocalGame() {
 		return socket == NULL;
+	}
+
+	bool isNetworkGame() {
+		return socket != NULL;
 	}
 
 	uint32_t getTileUnderCursor(float x, float y) {
@@ -734,6 +743,19 @@ public:
 		return getId(tile_x, tile_y, half_segment / 2);
 	}
 
+	void onFigureMoved(uint32_t player, uint32_t from, uint32_t to, MoveType type) {
+		game_log.append(std::format("Player {}: {} [{}, {}, {}] -> [{}, {}, {}]\n", player, type,
+			getX(from), getY(from), getZ(from),
+			getX(to), getY(to), getZ(to)
+		));
+	}
+
+	void onFigurePromoted(uint32_t player, uint32_t id, Figure figure) {
+		game_log.append(std::format("Player {}: Promote pawn [{}, {}, {}] to {}\n", player,
+			getX(id), getY(id), getZ(id), figure
+		));
+	}
+
 private:
 	SDL_Window* window;
 	SDL_GLContext gl_context;
@@ -759,6 +781,8 @@ private:
 	GLuint field_uniform_buffer, time_uniform_buffer;
 
 	Field field;
+
+	std::string game_log;
 };
 
 int main(int, char *[]) {

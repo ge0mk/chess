@@ -209,3 +209,16 @@ bool Field::isPlayerCheckMate(uint32_t player) {
 	// TODO: check if player can capture / block the attacking figure
 	return isPlayerCheck(player) && calculateMoves(players[player].king_position, false) == 0;
 }
+
+void Field::switchToNextPlayer() {
+	for (uint32_t i = 0; i < num_players; i++) {
+		current_player = (current_player + 1) % num_players;
+		cursor_id = (cursor_id + 32) % (num_players * 32);
+
+		if (!isPlayerCheckMate(current_player)) {
+			break;
+		}
+
+		players[current_player].is_checkmate = true;
+	}
+}

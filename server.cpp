@@ -121,7 +121,7 @@ public:
 				field.moveFigure(msg.move.type, msg.move.from, msg.move.to);
 
 				if (field.tiles[msg.move.to].figure != Figure::Pawn || getY(msg.move.to) != 0) {
-					field.current_player = (field.current_player + 1) % field.num_players;
+					field.switchToNextPlayer();
 					msg.next_player = field.current_player;
 				}
 
@@ -136,7 +136,7 @@ public:
 					field.tiles[msg.promotion.id].figure = msg.promotion.figure;
 				}
 
-				field.current_player = (field.current_player + 1) % field.num_players;
+				field.switchToNextPlayer();
 				msg.next_player = field.current_player;
 				sendMessageToAllClients(msg);
 			}

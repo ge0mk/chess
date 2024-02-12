@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <format>
 
 #define getId(x, y, z) (((z)<<5) | ((y)<<3) | (x))
 #define getX(id) ((id) & 0b00000111)
@@ -26,12 +27,51 @@ enum class Figure : uint8_t {
 	Any,
 };
 
+template <>
+struct std::formatter<Figure> {
+	constexpr auto parse(std::format_parse_context &ctx) {
+		return ctx.begin();
+	}
+
+	auto format(const Figure& figure, std::format_context &ctx) const {
+		switch (figure) {
+			case Figure::None: return std::format_to(ctx.out(), "None");
+			case Figure::Pawn: return std::format_to(ctx.out(), "Pawn");
+			case Figure::Bishop: return std::format_to(ctx.out(), "Bishop");
+			case Figure::Knight: return std::format_to(ctx.out(), "Knight");
+			case Figure::Rook: return std::format_to(ctx.out(), "Rook");
+			case Figure::Queen: return std::format_to(ctx.out(), "Queen");
+			case Figure::King: return std::format_to(ctx.out(), "King");
+			case Figure::Any: return std::format_to(ctx.out(), "Any");
+			default: return std::format_to(ctx.out(), "");
+		}
+	}
+};
+
 enum class MoveType : uint8_t {
 	None,
 	Move,
 	Capture,
 	Castle,
 	EnPassant,
+};
+
+template <>
+struct std::formatter<MoveType> {
+	constexpr auto parse(std::format_parse_context &ctx) {
+		return ctx.begin();
+	}
+
+	auto format(const MoveType& move, std::format_context &ctx) const {
+		switch (move) {
+			case MoveType::None: return std::format_to(ctx.out(), "None");
+			case MoveType::Move: return std::format_to(ctx.out(), "Move");
+			case MoveType::Capture: return std::format_to(ctx.out(), "Capture");
+			case MoveType::Castle: return std::format_to(ctx.out(), "Castle");
+			case MoveType::EnPassant: return std::format_to(ctx.out(), "EnPassant");
+			default: return std::format_to(ctx.out(), "");
+		}
+	}
 };
 
 struct Tile {
@@ -76,6 +116,8 @@ struct Field {
 	bool isTileAttacked(uint32_t tile, uint32_t player, bool mark_attackers);
 	bool isPlayerCheck(uint32_t player);
 	bool isPlayerCheckMate(uint32_t player);
+
+	void switchToNextPlayer();
 
 	template <typename F>
 	void traverseReachableTiles(uint32_t start, Figure figure, F visitor) {
