@@ -1,10 +1,14 @@
 #include <algorithm>
 #include <cerrno>
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <format>
+#include <iostream>
+#include <string>
 #include <vector>
 
 #include "chess.h"
@@ -15,12 +19,12 @@
 
 class Server {
 public:
-	Server(uint32_t num_players) : field(num_players) {
+	Server(uint32_t num_players, uint16_t port) : field(num_players) {
 		if (SDLNet_Init() != 0 ) {
 			panic("Failed to initialize SDL_net %s\n", SDL_GetError());
 		}
 
-		server = SDLNet_CreateServer(NULL, 1234);
+		server = SDLNet_CreateServer(NULL, port);
 		if (!server) {
 			panic("couldn't create server: %s\n", SDL_GetError());
 		}
@@ -41,7 +45,7 @@ public:
 		SDLNet_Quit();
 	}
 
-	void run() {
+	int64_t run() {
 		while (SDLNet_WaitUntilInputAvailable(sockets.data(), sockets.size(), -1) > 0) {
 			SDLNet_StreamSocket *client = NULL;
 			if (SDLNet_AcceptClient(server, &client) != 0) {
@@ -72,6 +76,8 @@ public:
 				handleMessage(i, msg);
 			}
 		}
+
+		return 0;
 	}
 
 	void acceptClient(SDLNet_StreamSocket *client) {
@@ -164,12 +170,31 @@ private:
 };
 
 int main(int argc, char *argv[]) {
-	if (argc != 2) {
-		panic("usage: server <num_players>\n");
+	uint32_t num_players = 0;
+	uint16_t port = 1234;
+
+	std::vector<std::string> args(argv, argv + argc);
+	for (uint64_t i = 1; i < args.size(); i++) {
+		if ((args[i] == "-n" || args[i] == "--num-players") && i < args.size() - 1) {
+			num_players = std::stoul(args[i + 1]);
+		} else if ((args[i] == "-p" || args[i] == "--port") && i < args.size() - 1) {
+			port = std::stoul(args[i + 1]);
+		} else if (args[i] == "-h" || args[i] == "--help" || args[i] == "-?") {
+			std::cout<<std::format(
+				"Usage: {} [OPTION]...\n\n"
+				"Options:\n"
+				"  -h, --help, -?                    show this help message\n"
+				"  -n, --num-players <num players>   specify the number of players\n"
+				"  -p, --port <port>                 specify the port to listen on\n",
+				args[0]
+			);
+		}
 	}
 
-	Server server{uint32_t(atoi(argv[1]))};
-	server.run();
+	if (num_players < 2) {
+		return 1;
+	}
 
-	return 0;
+	Server server(num_players, port);
+	return server.run();
 }
