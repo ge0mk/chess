@@ -4,3 +4,10 @@ compile_commands.json
 env
 img/*.png
 imgui.ini
+
+# Backend
+backend/chess_api/node_modules
+backend/chess_api/.idea
+backend/chess_api/Test.http
+backend/neo4j-volume/data/*
+backend/neo4j-volume/logs/*
