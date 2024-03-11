@@ -10,6 +10,7 @@ add_subdirectory(SDL)
 add_subdirectory(SDL_net)
 add_subdirectory(SDL_image)
 
+include_directories(cpp-httplib)
 include_directories(imgui)
 include_directories(SDL/include)
 include_directories(SDL_net/include)
@@ -48,7 +49,9 @@ else()
     file(GLOB_RECURSE SHADER_FILES "shaders/*")
 endif()
 
-add_executable(client client.cpp chess.cpp glad.c
+add_executable(main
+    src/main.cpp src/chess.cpp src/gl.cpp src/session.cpp src/server.cpp src/window.cpp
+    src/glad.c
     imgui/imgui.cpp
     imgui/imgui_demo.cpp
     imgui/imgui_draw.cpp
@@ -56,13 +59,15 @@ add_executable(client client.cpp chess.cpp glad.c
     imgui/imgui_widgets.cpp
     imgui/backends/imgui_impl_opengl3.cpp
     imgui/backends/imgui_impl_sdl3.cpp
+    imgui/misc/cpp/imgui_stdlib.cpp
 )
-target_link_libraries(client SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
-add_dependencies(client shaders)
+target_include_directories(main PRIVATE include)
+target_link_libraries(main SDL3_net::SDL3_net SDL3_image::SDL3_image SDL3::SDL3)
+add_dependencies(main shaders)
 
-add_executable(server server.cpp chess.cpp)
-target_link_libraries(server SDL3_net::SDL3_net SDL3::SDL3)
+install(TARGETS SDL3-shared SDL3_image-shared SDL3_net-shared main)
 
-install(TARGETS SDL3-shared SDL3_image-shared SDL3_net-shared client server)
 install(FILES ${SHADER_FILES} DESTINATION shaders)
-install(FILES palette.png spritesheet.png DESTINATION .)
+
+file(GLOB_RECURSE TEXTURES "textures/*")
+install(FILES ${TEXTURES} DESTINATION textures)

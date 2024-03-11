@@ -8,6 +8,7 @@ layout (location = 1) out vec2 out_uv;
 layout (location = 2) flat out int out_id;
 
 layout (binding = 0, std140) uniform aspect_ratio_uniform_data {
+	vec2 resolution;
 	vec2 offset;
 	float scale;
 	float aspect_ratio;

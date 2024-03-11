@@ -1,6 +1,11 @@
-#include "chess.h"
+#include "chess.hpp"
 
-void Field::initializeField() {
+#include <cassert>
+
+void Field::init(uint32_t num_players) {
+	assert(num_players <= MAX_PLAYERS);
+
+	this->num_players = num_players;
 	cursor_id = 0;
 	selected_id = 0;
 	player_pov = 0;
@@ -34,9 +39,7 @@ void Field::initializeField() {
 		players[z].is_checkmate = false;
 		players[z].king_position = getId(4, 0, z);
 	}
-}
 
-void Field::initializeNeighborGraph() {
 	for (uint32_t id = 0; id < num_players * 32; id++) {
 		for (uint32_t dir = North; dir <= West; dir++) {
 			neighbors[id][dir] = IdAndDirection();
@@ -146,7 +149,7 @@ uint32_t Field::calculateMoves(uint32_t start, bool mark_tiles) {
 	return num_reachable_tiles;
 }
 
-void Field::moveFigure(MoveType move, uint32_t from, uint32_t to) {
+void Field::moveFigure(uint32_t from, uint32_t to, MoveType move) {
 	switch (move) {
 		case MoveType::None: return;
 		case MoveType::Move:

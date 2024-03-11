@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstdint>
 #include <format>
 
@@ -98,20 +100,19 @@ struct Field {
 	IdAndDirection neighbors[32 * MAX_PLAYERS][4];
 	PlayerData players[MAX_PLAYERS];
 	Tile tiles[32 * MAX_PLAYERS + 4];
-	uint32_t cursor_id;
 	uint32_t num_players;
+	uint32_t cursor_id;
 	uint32_t selected_id;
 	uint32_t player_pov;
 	uint32_t current_player;
 
-	inline explicit Field(uint32_t num_players = 2) : num_players(num_players) {}
+	inline explicit Field() {}
 
-	void initializeField();
-	void initializeNeighborGraph();
+	void init(uint32_t num_players);
 	void createEdge(uint32_t a, uint32_t b);
 
 	uint32_t calculateMoves(uint32_t start, bool mark_tiles);
-	void moveFigure(MoveType move, uint32_t from, uint32_t to);
+	void moveFigure(uint32_t from, uint32_t to, MoveType move);
 
 	bool isTileAttacked(uint32_t tile, uint32_t player, bool mark_attackers);
 	bool isPlayerCheck(uint32_t player);
@@ -270,48 +271,5 @@ struct Field {
 				visitor(id);
 			}
 		});
-	}
-};
-
-struct Message {
-	enum : uint32_t {
-		Move,
-		Promotion,
-	} type;
-
-	uint32_t player;
-	uint32_t next_player;
-
-	union {
-		struct {} none;
-
-		struct {
-			uint32_t from, to;
-			MoveType type;
-		} move;
-
-		struct {
-			uint32_t id;
-			Figure figure;
-		} promotion;
-	};
-
-	static inline constexpr Message makeMove(uint32_t player, uint32_t from, uint32_t to, MoveType type) {
-		Message msg;
-		msg.type = Move;
-		msg.player = player;
-		msg.move.from = from;
-		msg.move.to = to;
-		msg.move.type = type;
-		return msg;
-	}
-
-	static inline constexpr Message makePromotion(uint32_t player, uint32_t id, Figure figure) {
-		Message msg;
-		msg.type = Promotion;
-		msg.player = player;
-		msg.promotion.id = id;
-		msg.promotion.figure = figure;
-		return msg;
 	}
 };

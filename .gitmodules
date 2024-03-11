@@ -10,3 +10,6 @@
 [submodule "SDL_image"]
 	path = SDL_image
 	url = https://github.com/libsdl-org/SDL_image.git
+[submodule "cpp-httplib"]
+	path = cpp-httplib
+	url = https://github.com/yhirose/cpp-httplib.git

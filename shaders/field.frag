@@ -22,8 +22,8 @@ layout (location = 0) out vec4 out_color;
 
 layout (binding = 1, std140) uniform Field {
 	ivec4 tiles[8 * MAX_PLAYERS + 1];
-	int cursor_id;
 	int num_players;
+	int cursor_id;
 	int selected_id;
 	int player_offset;
 	int current_player;
